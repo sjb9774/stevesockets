@@ -1,22 +1,37 @@
 import unittest
 from unittest.mock import Mock
-from stevesockets.websocket import WebSocketFrame, bits, bits_value, to_binary
+from stevesockets.websocket import WebSocketFrame, bits_value, to_binary
 
 
 class TestBitsFunctions(unittest.TestCase):
 
-    def test_bits_valid_input(self):
+    def test_to_binary_valid_input(self):
         num = 201
-        bstr = bits(num)
+        bstr = to_binary(num)
         self.assertEqual(bstr, "11001001")
 
-    def test_bits_large_input(self):
+    def test_to_binary_neg_input(self):
         with self.assertRaises(ValueError):
-            bits(5400)
+            to_binary(-100)
 
-    def test_bits_neg_input(self):
+    def test_to_binary_neg_pad_to(self):
         with self.assertRaises(ValueError):
-            bits(-100)
+            to_binary(100, pad_to=-1)
+
+    def test_to_binary_pad_to(self):
+        result = to_binary(205, pad_to=10)
+        self.assertEqual(result, "0011001101")
+
+    def test_to_binary_invalid_input(self):
+        inputs = [None, False, "test", ["t", "e", "s", "t"], {"t": "e", "s": "t"}]
+        for i in inputs:
+            with self.subTest(i=i):
+                with self.assertRaises(ValueError):
+                    to_binary(i)
+
+    def test_to_binary_pad_to_smaller_than_input(self):
+        result = to_binary(205, pad_to=5)
+        self.assertEqual(result, "11001101")
 
     def test_bits_value_valid_input(self):
         v = bits_value("10010100")

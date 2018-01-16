@@ -2,16 +2,6 @@ from logging import getLogger as get_logger
 
 logger = get_logger(__name__)
 
-def bits(byte, p=7):
-    if byte > 255 or byte < 0:
-        raise ValueError("Bytes can't be greater than 255 or less than 0")
-    result = '1' if byte >= (2**p) else '0'
-    if result == '0' and p > 0:
-        result += bits(byte, p-1)
-    elif p > 0:
-        leftover = byte - 2**p
-        result += bits(leftover, p-1)
-    return result
 
 def bits_value(bits):
     if type(bits) != str:
@@ -25,6 +15,12 @@ def bits_value(bits):
     return total
 
 def to_binary(n, pad_to=None):
+    if type(n) != int:
+        raise ValueError("Input should be an integer")
+    if n < 0:
+        raise ValueError("Input should be a positive number")
+    if pad_to and pad_to < 0:
+        raise ValueError("Can't pad to a length less than 0")
     r = n
     s = ""
     while r > 0:
