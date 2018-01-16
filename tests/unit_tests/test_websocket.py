@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import Mock
-from stevesockets.websocket import WebSocketFrame, bits, bits_value
+from stevesockets.websocket import WebSocketFrame, bits, bits_value, to_binary
 
 
 class TestBitsFunctions(unittest.TestCase):
@@ -55,3 +55,31 @@ class TestWebSocketFrame(unittest.TestCase):
         WebSocketFrame.generate_mask = Mock(return_value=525161)
         f = WebSocketFrame(message="TEST DATA", mask=WebSocketFrame.generate_mask())
         self.assertEqual(f.to_bytes(), b'\x81\x89\x00\x08\x03iTMP= LB=A')
+
+    def test_webframe_from_bytes_non_fragmented_no_mask(self):
+        bstr = b'\x81\tTEST DATA'
+        f = WebSocketFrame.from_bytes(bstr)
+        self.assertEqual(f.message, "TEST DATA")
+        self.assertEqual(f.payload_length, 9)
+        self.assertIsNone(f.mask)
+
+    def test_webframe_from_bytes_non_fragmented_with_mask(self):
+        bstr = b'\x81\x89\x13}\xfd\xb7G8\xae\xe339\xbc\xe3R'
+        f = WebSocketFrame.from_bytes(bstr)
+        self.assertEqual(f.mask, 327024055)
+        self.assertEqual(f.payload_length, 9)
+        self.assertEqual(f.message, "TEST DATA")
+
+    def test_webframe_from_bytes_126_payload_no_mask(self):
+        bstr = b'\x81~\x00~TEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATA'
+        f = WebSocketFrame.from_bytes(bstr)
+        self.assertEqual(f.message, "TEST DATA" * 14)
+        self.assertEqual(f.payload_length, 126)
+        self.assertIsNone(f.mask)
+
+    def test_webframe_from_bytes_127_payload_no_mask(self):
+        bstr = b'\x81\x7f\x00\x00\x00\x00\x00\x00\x00\x87TEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATA'
+        f = WebSocketFrame.from_bytes(bstr)
+        self.assertEqual(f.message, "TEST DATA" * 15)
+        self.assertEqual(f.payload_length, 135)
+        self.assertIsNone(f.mask)

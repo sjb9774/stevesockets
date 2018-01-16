@@ -46,7 +46,7 @@ class WebSocketFrame:
     OPCODE_PING     = 9
     OPCODE_PONG     = 10
 
-    def __init__(self, fin=1, opcode=1, rsv=0, mask=None, message=None):
+    def __init__(self, fin=1, opcode=1, rsv=0, mask=None, message=""):
         self.fin = fin
         self.opcode = opcode
         self.mask_flag = 1 if mask else 0
@@ -89,8 +89,7 @@ class WebSocketFrame:
 
     @classmethod
     def from_bytes(cls, in_bytes):
-        #import pudb; pudb.set_trace()
-        full_bit_str = "".join([bits(byte) for byte in in_bytes])
+        full_bit_str = "".join([to_binary(byte, pad_to=8) for byte in in_bytes])
         bit_generator = (bit for bit in full_bit_str)
         get_next_bits = lambda x: "".join(next(bit_generator) for i in range(x))
 

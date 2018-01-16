@@ -210,8 +210,12 @@ class WebSocketServer(SocketServer):
                     return None # ignore pongs
                 elif frame.opcode == WebSocketFrame.OPCODE_CLOSE:
                     self.logger.debug("Recieved close frame with message: {m}".format(m=frame.message))
-                    conn.to_be_closed = True
-                    return WebSocketFrame(message=frame.message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes()
+                    if conn.is_to_be_closed():
+                        self.logger.warn("Connection is already marked for closing, ignoring addtional close frame")
+                        return None
+                    else:
+                        conn.mark_for_closing()
+                        return WebSocketFrame(message=frame.message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes()
                 else: #normal message
                     complete_message = frame.message
             response = self.handle_message(conn, complete_message)
