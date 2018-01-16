@@ -2,38 +2,6 @@ import logging
 import socket, select, threading
 
 
-class ConnectionPool:
-
-    def __init__(self):
-        self.cursor = 0
-        self.connections = []
-
-    def __next__(self):
-        return self.next()
-
-    def add(self, connection):
-        self.connections.append(connection)
-
-    def remove(self, connection):
-        self.connections.remove(connection)
-
-    def next(self):
-        return self.connections[self.inc_cursor()]
-
-    def get_cursor(self):
-        return self.cursor
-
-    def inc_cursor(self):
-        self.cursor += 1
-        self.cursor %= len(self.connections)
-        return self.get_cursor()
-
-    def dec_cursor(self):
-        self.cursor -= 1
-        self.cursor %= len(self.connections)
-        return self.get_cursor()
-
-
 class SocketConnection:
 
     def __init__(self, sck, address, port, logger=None):
@@ -69,7 +37,7 @@ class SocketServer:
         self.connections = []
 
     def _create_socket(self):
-        self.logger.debug("Creating socket")
+        self.logger.debug("Creating socket @ {addr}:{port}".format(addr=self.address[0], port=self.address[1]))
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.socket.bind(self.address)
@@ -97,19 +65,24 @@ class SocketServer:
             self.stop_listening()
             self._stop_server()
         else:
-            self.logger.debug("Listening on socket")
+            self.logger.debug("Listening on socket @ {addr}:{port}".format(addr=self.address[0], port=self.address[1]))
             self.socket.listen(100)
 
             self.listening = True
             while self.listening:
-                conn, _, _ = select.select([self.socket], [], [], .1)
-                for c in conn:
-                    sck, addr = self.socket.accept()
-                    self.logger.debug("{addr}".format(addr=addr))
-                    connection = SocketConnection(sck, addr[0], addr[1], logger=self.logger)
-                    self.connections.append(connection)
-                    self.logger.debug("New connection created at {addr}:{port}".format(addr=self.connections[-1].address, port=self.connections[-1].port))
-                    self.logger.debug("Total connections: {n}".format(n=len(self.connections)))
+                try:
+                    conn, _, _ = select.select([self.socket], [], [], .1)
+                    for c in conn:
+                        sck, addr = self.socket.accept()
+                        self.logger.debug("{addr}".format(addr=addr))
+                        connection = SocketConnection(sck, addr[0], addr[1], logger=self.logger)
+                        self.connections.append(connection)
+                        self.logger.debug("New connection created at {addr}:{port}".format(addr=self.connections[-1].address, port=self.connections[-1].port))
+                        self.logger.debug("Total connections: {n}".format(n=len(self.connections)))
+                except KeyboardInterrupt as err:
+                    self.logger.warn("Manually interrupting server")
+                    self.stop_listening()
+                    break
                 # this list will be the list of valid connections left (after creating new connections and closing old ones)
                 # after we've finished looping through all the currently active connections
                 new_connection_list = self.connections[:]
@@ -160,11 +133,18 @@ class SocketServer:
             returning the business logic response in bytes """
         return "Hello world"
 
+    def message_handler(self, fn):
+        self.handle_message = fn
+        return fn
+
     def _stop_server(self):
         self.logger.debug("Closing {n} connections".format(n=len(self.connections)))
         [c.close() for c in self.connections]
-        self.logger.debug("Closing server socket")
-        self.socket.close()
+        if self.socket:
+            self.logger.debug("Closing server socket")
+            self.socket.close()
+        else:
+            self.logger.debug("Socket not initialized, no need to close")
         self.logger.debug("Server done listening")
 
     def stop_listening(self):
@@ -249,4 +229,5 @@ class WebSocketServer(SocketServer):
                                 "Connection: Upgrade\r\n",
                                 "Sec-WebSocket-Accept: {accept}\r\n\r\n".format(accept=accept)])
             conn.mark_handshook()
+            self.logger.debug("Handshake successful @ {addr}:{port}".format(addr=conn.address, port=conn.port))
         return response
