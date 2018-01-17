@@ -10,11 +10,16 @@ class SocketConnection:
         self.port = port
         self.handshook = False
         self.to_be_closed = False
+        self.closed = False
         self.logger = logger if logger else logging.getLogger()
 
     def close(self):
         self.logger.debug("Closing connection at {addr}:{port}".format(addr=self.address, port=self.port))
         self.socket.close()
+        self.closed = True
+
+    def is_closed(self):
+        return self.closed
 
     def mark_handshook(self):
         self.handshook = True
@@ -90,23 +95,25 @@ class SocketServer:
                     if connection.is_to_be_closed():
                         self.logger.warn("Connection @ {addr}:{port} to be closed before recieving data? closing".format(addr=connection.address, port=connection.port))
                         new_connection_list.remove(connection)
-                        connection.close()
+                        self._close_connection(connection)
                         continue
                     try:
                         avail_data, _, _ = select.select([connection.socket], [], [], .1)
                         if avail_data:
                             response = self.connection_handler(connection)
+                            # TODO: Figure out a way to allow connections to be closed via client-sent close frame while echoing
+                            #       that frame's message and not distrupting gracefully closing on KeyboardInterrupt or error
                             if response:
                                 self.logger.debug("Sending message {r}".format(r=response.encode() if hasattr(response, "encode") else response))
                                 connection.socket.sendall(response.encode() if hasattr(response, "encode") else response)
                             if connection.is_to_be_closed():
                                 self.logger.debug("Closing connection marked for closure")
                                 new_connection_list.remove(connection)
-                                connection.close()
+                                self._close_connection(connection)
                     except socket.error as err:
                         self.logger.warning("Socket error '{err}'".format(err=err))
                         new_connection_list.remove(connection)
-                        connection.close()
+                        self._close_connection(connection)
                     except KeyboardInterrupt as err:
                         self.logger.warn("Manually interrupting server")
                         self.stop_listening()
@@ -137,9 +144,14 @@ class SocketServer:
         self.handle_message = fn
         return fn
 
+    def _close_connection(self, connection):
+        """ Can be overridden to allow custom behavior around closing SocketConnections """
+        connection.close()
+        self.logger.debug("Connection @ {addr}:{port} closed".format(addr=connection.address, port=connection.port))
+
     def _stop_server(self):
         self.logger.debug("Closing {n} connections".format(n=len(self.connections)))
-        [c.close() for c in self.connections]
+        [self._close_connection(c) for c in self.connections]
         if self.socket:
             self.logger.debug("Closing server socket")
             self.socket.close()
@@ -200,6 +212,15 @@ class WebSocketServer(SocketServer):
                     complete_message = frame.message
             response = self.handle_message(conn, complete_message)
             return WebSocketFrame(message=response).to_bytes()
+
+    def _close_connection(self, connection):
+        self.logger.debug("Sending closing frame to connection @ {addr}:{port} to start graceful closure".format(addr=connection.address, port=connection.port))
+        connection.socket.sendall(WebSocketFrame(message="Connection closing", opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
+        # get the one last closing frame that should be incoming
+        self.connection_handler(connection)
+        if not connection.is_to_be_closed():
+            self.logger.warn("Connection @ {addr}:{port} didn't recieve close frame back from client".format(addr=connection.address, port=connection.port))
+        super(WebSocketServer, self)._close_connection(connection)
 
     def _get_websocket_accept(self, key):
         return base64.b64encode(hashlib.sha1((key + self.WEBSOCKET_MAGIC).encode()).digest()).decode()
