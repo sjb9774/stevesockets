@@ -1,6 +1,6 @@
 import logging
 import socket, select, threading
-
+import collections
 
 class SocketConnection:
 
@@ -12,11 +12,26 @@ class SocketConnection:
         self.to_be_closed = False
         self.closed = False
         self.logger = logger if logger else logging.getLogger()
+        self.messages = collections.deque()
 
     def close(self):
         self.logger.debug("Closing connection at {addr}:{port}".format(addr=self.address, port=self.port))
         self.socket.close()
         self.closed = True
+
+    def queue_message(self, message):
+        self.messages.append(message)
+
+    def flush_messages(self):
+        for x in range(len(self.messages)):
+            msg = self.messages.popleft()
+            self.socket.sendall(msg)
+
+    def peek_message(self, n=0):
+        if len(self.messages) > n:
+            return self.messages[n]
+        else:
+            return None
 
     def is_closed(self):
         return self.closed
@@ -105,11 +120,12 @@ class SocketServer:
                             #       that frame's message and not distrupting gracefully closing on KeyboardInterrupt or error
                             if response:
                                 self.logger.debug("Sending message {r}".format(r=response.encode() if hasattr(response, "encode") else response))
-                                connection.socket.sendall(response.encode() if hasattr(response, "encode") else response)
+                                connection.queue_message(response.encode() if hasattr(response, "encode") else response)
                             if connection.is_to_be_closed():
                                 self.logger.debug("Closing connection marked for closure")
                                 new_connection_list.remove(connection)
                                 self._close_connection(connection)
+                        connection.flush_messages()
                     except socket.error as err:
                         self.logger.warning("Socket error '{err}'".format(err=err))
                         new_connection_list.remove(connection)
@@ -119,7 +135,6 @@ class SocketServer:
                         self.stop_listening()
                         break
                 self.connections = new_connection_list
-            self.stop_listening()
             self._stop_server()
 
     def connection_handler(self, connection):
@@ -213,9 +228,13 @@ class WebSocketServer(SocketServer):
             response = self.handle_message(conn, complete_message)
             return WebSocketFrame(message=response).to_bytes()
 
-    def _close_connection(self, connection):
-        self.logger.debug("Sending closing frame to connection @ {addr}:{port} to start graceful closure".format(addr=connection.address, port=connection.port))
-        connection.socket.sendall(WebSocketFrame(message="Connection closing", opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
+    def _close_connection(self, connection, close_message="Connection closing"):
+        self.logger.debug("Connection @ {addr}:{port} starting graceful closure".format(addr=connection.address, port=connection.port))
+        last_msg = connection.peek_message()
+        if not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE:
+            self.logger.debug("Close frame not already queued up, adding one")
+            connection.queue_message(WebSocketFrame(message=close_message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
+        connection.flush_messages()
         # get the one last closing frame that should be incoming
         self.connection_handler(connection)
         if not connection.is_to_be_closed():
