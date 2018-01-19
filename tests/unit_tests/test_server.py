@@ -94,6 +94,20 @@ class TestWebSocketServer(unittest.TestCase):
         m.handshook = handshook
         return m
 
+    def test_handle_message_without_mask(self):
+        msg = b'\x81\tTEST DATA'
+        mock_connection = self._mock_connection(returns=msg)
+        self.server.handle_message = lambda self, message: message
+        resp = self.server.connection_handler(mock_connection)
+        self.assertEqual(resp, b'\x81\tTEST DATA')
+
+    def test_handle_message_with_mask(self):
+        msg = b'\x81\x89\xc0\x9c}"\x94\xd9.v\xe0\xd8<v\x81'
+        mock_connection = self._mock_connection(returns=msg)
+        self.server.handle_message = lambda self, message: message
+        resp = self.server.connection_handler(mock_connection)
+        self.assertEqual(resp, b'\x81\tTEST DATA')
+
     def test_handle_handshake(self):
         client_handshake = bytes("GET / HTTP/1.1\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n", "utf-8")
         handshake_response = self.server.handle_websocket_handshake(Mock(name="CONNECTION"), client_handshake).split("\r\n")
@@ -113,6 +127,16 @@ class TestWebSocketServer(unittest.TestCase):
         resp = self.server.connection_handler(conn_mock)
         self.assertIsNone(resp)
 
+    def test__close_connection(self):
+        mock_connection = self._mock_connection()
+        close_frame = b'\x88\x00'
+        mock_connection.peek_message = Mock(return_value=close_frame)
+        self.server.connection_handler = Mock()
+        self.server._close_connection(mock_connection)
+        mock_connection.peek_message.assert_called_once_with()
+        mock_connection.flush_messages.assert_called_once_with()
+        mock_connection.queue_message.assert_not_called()
+
     def test_connection_close(self):
         conn_mock = self._mock_connection(returns=b'\x88\x00')
         conn_mock.is_to_be_closed = Mock(return_value=False)
@@ -120,7 +144,7 @@ class TestWebSocketServer(unittest.TestCase):
         conn_mock.is_handshook.assert_called_once_with()
         conn_mock.is_to_be_closed.assert_called_once_with()
         conn_mock.mark_for_closing.assert_called_once_with()
-        self.assertEqual(resp, conn_mock.socket.recv.return_value)
+        self.assertEqual(resp, b'\x88\x00')
 
     def test_connection_close_twice(self):
         conn_mock = self._mock_connection(returns=b'\x88\x00')
