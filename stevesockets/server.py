@@ -153,6 +153,7 @@ class SocketServer:
             response = self.handle_message(connection, data)
             return response
         else:
+            connection.mark_for_closing()
             return None
 
     def handle_message(self, connection, data):
