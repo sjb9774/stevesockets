@@ -147,7 +147,6 @@ class TestWebSocketServer(unittest.TestCase):
         conn_mock = self._mock_connection(returns=b'\x88\x00')
         conn_mock.is_to_be_closed = Mock(return_value=False)
         resp = self.server.connection_handler(conn_mock)
-        conn_mock.is_handshook.assert_called_once_with()
         conn_mock.is_to_be_closed.assert_called_once_with()
         conn_mock.mark_for_closing.assert_called_once_with()
         self.assertEqual(resp, b'\x88\x00')
