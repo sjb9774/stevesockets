@@ -25,7 +25,10 @@ class SocketConnection:
     def flush_messages(self):
         for x in range(len(self.messages)):
             msg = self.messages.popleft()
-            self.socket.sendall(msg)
+            try:
+                self.socket.sendall(msg)
+            except socket.error as err:
+                logger.error("Socket error while sending message: {err}".format(err=err))
 
     def peek_message(self, n=0):
         if len(self.messages) > n:
@@ -111,29 +114,31 @@ class SocketServer:
                         self.logger.warn("Connection @ {addr}:{port} to be closed before recieving data? closing".format(addr=connection.address, port=connection.port))
                         new_connection_list.remove(connection)
                         self._close_connection(connection)
-                        continue
-                    try:
-                        avail_data, _, _ = select.select([connection.socket], [], [], .1)
-                        if avail_data:
-                            response = self.connection_handler(connection)
-                            # TODO: Figure out a way to allow connections to be closed via client-sent close frame while echoing
-                            #       that frame's message and not distrupting gracefully closing on KeyboardInterrupt or error
-                            if response:
-                                self.logger.debug("Sending message {r}".format(r=response.encode() if hasattr(response, "encode") else response))
-                                connection.queue_message(response.encode() if hasattr(response, "encode") else response)
-                            if connection.is_to_be_closed():
-                                self.logger.debug("Closing connection marked for closure")
-                                new_connection_list.remove(connection)
-                                self._close_connection(connection)
-                        connection.flush_messages()
-                    except socket.error as err:
-                        self.logger.warning("Socket error '{err}'".format(err=err))
+                    elif connection.is_closed(): # this can happen in when running asynchronously
                         new_connection_list.remove(connection)
-                        self._close_connection(connection)
-                    except KeyboardInterrupt as err:
-                        self.logger.warn("Manually interrupting server")
-                        self.stop_listening()
-                        break
+                    else:
+                        try:
+                            avail_data, _, _ = select.select([connection.socket], [], [], .1)
+                            if avail_data:
+                                response = self.connection_handler(connection)
+                                # TODO: Figure out a way to allow connections to be closed via client-sent close frame while echoing
+                                #       that frame's message and not distrupting gracefully closing on KeyboardInterrupt or error
+                                if response:
+                                    self.logger.debug("Sending message {r}".format(r=response.encode() if hasattr(response, "encode") else response))
+                                    connection.queue_message(response.encode() if hasattr(response, "encode") else response)
+                                if connection.is_to_be_closed():
+                                    self.logger.debug("Closing connection marked for closure")
+                                    new_connection_list.remove(connection)
+                                    self._close_connection(connection)
+                            connection.flush_messages()
+                        except socket.error as err:
+                            self.logger.warning("Socket error '{err}'".format(err=err))
+                            new_connection_list.remove(connection)
+                            self._close_connection(connection)
+                        except KeyboardInterrupt as err:
+                            self.logger.warn("Manually interrupting server")
+                            self.stop_listening()
+                            break
                 self.connections = new_connection_list
             self._stop_server()
 
@@ -167,6 +172,7 @@ class SocketServer:
     def _stop_server(self):
         self.logger.debug("Closing {n} connections".format(n=len(self.connections)))
         [self._close_connection(c) for c in self.connections]
+        self.connections = []
         if self.socket:
             self.logger.debug("Closing server socket")
             self.socket.close()
@@ -231,14 +237,14 @@ class WebSocketServer(SocketServer):
     def _close_connection(self, connection, close_message="Connection closing"):
         self.logger.debug("Connection @ {addr}:{port} starting graceful closure".format(addr=connection.address, port=connection.port))
         last_msg = connection.peek_message()
-        if not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE:
+        if not connection.is_closed() and (not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
             self.logger.debug("Close frame not already queued up, adding one")
             connection.queue_message(WebSocketFrame(message=close_message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
-        connection.flush_messages()
-        # get the one last closing frame that should be incoming
-        self.connection_handler(connection)
-        if not connection.is_to_be_closed():
-            self.logger.warn("Connection @ {addr}:{port} didn't recieve close frame back from client".format(addr=connection.address, port=connection.port))
+            connection.flush_messages()
+            # get the one last closing frame that should be incoming
+            self.connection_handler(connection)
+            if not connection.is_to_be_closed():
+                self.logger.warn("Connection @ {addr}:{port} didn't recieve close frame back from client".format(addr=connection.address, port=connection.port))
         super(WebSocketServer, self)._close_connection(connection)
 
     def _get_websocket_accept(self, key):
