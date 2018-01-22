@@ -18,6 +18,13 @@ class TestSocketServer(unittest.TestCase):
         socket.socket.assert_called_once_with(stevesockets.server.socket.AF_INET, stevesockets.server.socket.SOCK_STREAM)
         self.server.socket.bind.assert_called_once_with(("127.0.0.1", 9000))
 
+    def test_close_on_empty_message(self):
+        empty_msg = b""
+        conn = Mock()
+        conn.socket.recv.return_value = empty_msg
+        self.server.connection_handler(conn)
+        conn.mark_for_closing.assert_called_once_with()
+
     def test_listen(self):
         self.server._create_socket = Mock()
         mock_conn = Mock()
@@ -134,7 +141,6 @@ class TestWebSocketServer(unittest.TestCase):
         self.server.connection_handler = Mock()
         self.server._close_connection(mock_connection)
         mock_connection.peek_message.assert_called_once_with()
-        mock_connection.flush_messages.assert_called_once_with()
         mock_connection.queue_message.assert_not_called()
 
     def test_connection_close(self):
