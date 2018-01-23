@@ -19,6 +19,12 @@ class SocketConnection:
         self.socket.close()
         self.closed = True
 
+    def read_data(self, size=4096):
+        return self.socket.recv(size)
+
+    def send_data(self, data):
+        self.socket.sendall(data)
+
     def queue_message(self, message):
         self.messages.append(message)
 
@@ -53,6 +59,8 @@ class SocketConnection:
 
 class SocketServer:
 
+    connection_cls = SocketConnection
+
     def __init__(self, address=('127.0.0.1', 9000), logger=None):
         self.address = address
         self.listening = False
@@ -80,7 +88,7 @@ class SocketServer:
     def _get_client_connection(self):
         sck, addr = self.socket.accept()
         self.logger.debug("{addr}".format(addr=addr))
-        connection = SocketConnection(sck, addr[0], addr[1], logger=self.logger)
+        connection = self.connection_cls(sck, addr[0], addr[1], logger=self.logger)
         self.logger.debug("New connection created at {addr}:{port}".format(addr=connection.address, port=connection.port))
         return connection
 
@@ -135,8 +143,6 @@ class SocketServer:
                         avail_data, _, _ = select.select([connection.socket], [], [], .1)
                         if avail_data:
                             response = self.connection_handler(connection)
-                            # TODO: Figure out a way to allow connections to be closed via client-sent close frame while echoing
-                            #       that frame's message and not distrupting gracefully closing on KeyboardInterrupt or error
                             if response:
                                 self.logger.debug("Sending message {r}".format(r=response.encode() if hasattr(response, "encode") else response))
                                 connection.queue_message(response.encode() if hasattr(response, "encode") else response)
@@ -170,6 +176,7 @@ class SocketServer:
         return "Hello world"
 
     def message_handler(self, fn):
+        """ This decorator can be used to simply set a handle_message without subclassing """
         self.handle_message = fn
         return fn
 
@@ -198,8 +205,35 @@ class SocketServer:
 from stevesockets.websocket import WebSocketFrame
 import base64, hashlib
 
+class WebSocketConnection(SocketConnection):
+
+    CLOSED = "closed"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+
+    def __init__(self, sck, address="127.0.0.1", port=9000, logger=None):
+        super(WebSocketConnection, self).__init__(sck, address=address, port=port, logger=logger)
+        self.status = WebSocketConnection.CLOSED
+
+    def mark_handshook(self):
+        self.set_status(WebSocketConnection.CONNECTED)
+        super(WebSocketConnection, self).mark_handshook()
+
+    def mark_for_closing(self):
+        super(WebSocketConnection, self).mark_for_closing()
+        self.set_status(WebSocketConnection.CLOSED)
+
+    def set_status(self, status):
+        self.logger.debug("Setting connection @ {addr}:{port} status to '{status}'".format(addr=self.address, port=self.port, status=status))
+        self.status = status
+
+    def get_status(self):
+        return self.status
+
+
 class WebSocketServer(SocketServer):
 
+    connection_cls = WebSocketConnection
     WEBSOCKET_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
     def __init__(self, address=('127.0.0.1', 9000), logger=None):
@@ -210,9 +244,7 @@ class WebSocketServer(SocketServer):
         conn = super(WebSocketServer, self)._get_client_connection()
         self.logger.debug("Executing handshake with new connection")
         handshake_input = conn.socket.recv(4096)
-        handshake_response = self.handle_websocket_handshake(conn, handshake_input)
-        conn.socket.sendall(handshake_response.encode())
-        conn.mark_handshook()
+        self.handle_websocket_handshake(conn, handshake_input)
         return conn
 
     def connection_handler(self, conn):
@@ -252,7 +284,7 @@ class WebSocketServer(SocketServer):
     def _close_connection(self, connection, close_message="Connection closing"):
         self.logger.debug("Connection @ {addr}:{port} starting graceful closure".format(addr=connection.address, port=connection.port))
         last_msg = connection.peek_message()
-        if not connection.is_closed() and (not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
+        if connection.is_handshook() and not connection.is_closed() and (not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
             self.logger.debug("Close frame not already queued up, adding one")
             connection.queue_message(WebSocketFrame(message=close_message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
             connection.flush_messages()
@@ -265,30 +297,56 @@ class WebSocketServer(SocketServer):
     def _get_websocket_accept(self, key):
         return base64.b64encode(hashlib.sha1((key + self.WEBSOCKET_MAGIC).encode()).digest()).decode()
 
+    def send_http_response(self, conn, status, headers=None):
+        descriptions = {
+            101: "Switching Protocols",
+
+            200: "OK",
+
+            400: "Bad Request",
+            401: "Unauthorized",
+            403: "Forbidden",
+            404: "Not Found",
+            429: "Too Many Requests",
+
+            500: "Internal Server Error",
+            501: "Not Implemented",
+            502: "Bad Gateway",
+            503: "Service Unavailable",
+            504: "Gateway Timeout"
+        }
+        msg = "HTTP/1.1 {status} {status_description}\r\n".format(status=status, status_description=descriptions.get(status, ""))
+        if headers:
+            for header, value in headers.items():
+                msg += "{header}: {value}\r\n".format(header=header, value=value)
+        msg += "\r\n"
+        conn.socket.sendall(msg.encode())
+
     def handle_websocket_handshake(self, conn, data):
         self.logger.debug("Starting handshake")
+        conn.set_status(WebSocketConnection.CONNECTING)
         split_data = data.decode().split("\r\n")
-        method, path, http = split_data[0].split(" ")
-        headers = {}
         try:
+            method, path, http = split_data[0].split(" ")
+            headers = {}
             for header in split_data[1:]:
                 if ": " in header:
                     key, value = header.split(": ")
                     headers[key] = value
-        except TypeError as err:
+            accept = self._get_websocket_accept(headers.get("Sec-WebSocket-Key"))
+        except (TypeError, ValueError) as err:
             self.logger.error("Malformed headers in client handshake, closing connection")
+            self.send_http_response(conn, 400)
             conn.mark_for_closing()
-            response = ""
         except BaseException as err:
             self.logger.error("Unexpected error encountered, closing connection: {msg}".format(msg=err))
+            self.send_http_response(conn, 500)
             conn.mark_for_closing()
-            response = ""
         else:
-            accept = self._get_websocket_accept(headers.get("Sec-WebSocket-Key"))
-            response = "".join(["HTTP/1.1 101 Switching Protocols\r\n",
-                                "Upgrade: websocket\r\n",
-                                "Connection: Upgrade\r\n",
-                                "Sec-WebSocket-Accept: {accept}\r\n\r\n".format(accept=accept)])
+            self.send_http_response(conn, 101, headers={
+                "Upgrade": "websocket",
+                "Connection": "Upgrade",
+                "Sec-WebSocket-Accept": accept
+            })
             conn.mark_handshook()
             self.logger.debug("Handshake successful @ {addr}:{port}".format(addr=conn.address, port=conn.port))
-        return response
