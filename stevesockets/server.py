@@ -34,7 +34,7 @@ class SocketConnection:
             try:
                 self.socket.sendall(msg)
             except socket.error as err:
-                logger.error("Socket error while sending message: {err}".format(err=err))
+                self.logger.error("Socket error while sending message: {err}".format(err=err))
 
     def peek_message(self, n=0):
         if len(self.messages) > n:

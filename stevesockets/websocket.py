@@ -59,10 +59,10 @@ class WebSocketFrame:
         full_bit_str += to_binary(self.mask_flag, pad_to=1)
         if self.payload_length <= 125:
             full_bit_str += to_binary(self.payload_length, pad_to=7)
-        elif self.payload_length == 126:
+        elif self.payload_length > 125 and self.payload_length < 2 ** 16:
             full_bit_str += to_binary(126, pad_to=7)
             full_bit_str += to_binary(self.payload_length, pad_to=16)
-        elif self.payload_length > 126:
+        elif self.payload_length >= 2 ** 16:
             full_bit_str += to_binary(127, pad_to=7)
             full_bit_str += to_binary(self.payload_length, pad_to=64)
         if bool(self.mask_flag):
