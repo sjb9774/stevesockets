@@ -69,21 +69,18 @@ class TestSocketServer(unittest.TestCase):
         self.server.stop_listening()
         self.assertFalse(self.server.listening)
 
-    @mock.patch("stevesockets.server.SocketConnection")
-    def test_connection_removed_before_processing(self, sc):
+    def test_connection_removed_before_processing(self):
         def fn():
             self.server.stop_listening()
             return mock.DEFAULT # so mock will return the return value we set >_>
-
-        sc.return_value.is_to_be_closed.return_value = True
-        sc.return_value.is_to_be_closed.side_effect = fn
+        self.server.prune_connections = Mock()
+        self.server.prune_connections.side_effect = fn
         stevesockets.server.select.select = Mock(return_value=[[Mock()], [], []])
         self.server._create_socket()
         self.server.socket.accept = Mock(return_value=(Mock(), ("TEST ADDRESS", 5555)))
         self.server.handle_connection = Mock()
         self.server.listen()
 
-        sc.return_value.is_to_be_closed.assert_called_once_with()
         self.server.handle_connection.assert_not_called()
 
 class TestWebSocketServer(unittest.TestCase):
@@ -117,12 +114,14 @@ class TestWebSocketServer(unittest.TestCase):
 
     def test_handle_handshake(self):
         client_handshake = bytes("GET / HTTP/1.1\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n", "utf-8")
-        handshake_response = self.server.handle_websocket_handshake(Mock(name="CONNECTION"), client_handshake).split("\r\n")
-        self.assertEqual(handshake_response[0], "HTTP/1.1 101 Switching Protocols")
-        headers = {k: v for k,v in [header.split(": ") for header in handshake_response[1:4]]}
-        self.assertEqual(headers.get("Upgrade"), "websocket")
-        self.assertEqual(headers.get("Connection"), "Upgrade")
-        self.assertEqual(headers.get("Sec-WebSocket-Accept"), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
+        self.server.send_http_response = Mock()
+        mock_conn = self._mock_connection()
+        self.server.handle_websocket_handshake(mock_conn, client_handshake)
+        self.server.send_http_response.assert_called_once_with(mock_conn, 101, headers={
+            "Upgrade": "websocket",
+            "Connection": "Upgrade",
+            "Sec-WebSocket-Accept": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        })
 
     def test_connection_handler_ping(self):
         conn_mock = self._mock_connection(returns=b'\x89\x00')
