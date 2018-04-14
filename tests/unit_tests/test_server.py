@@ -4,6 +4,7 @@ from unittest import mock
 import stevesockets.server
 import socket
 
+
 class TestSocketServer(unittest.TestCase):
 
     def setUp(self):
@@ -29,6 +30,7 @@ class TestSocketServer(unittest.TestCase):
         self.server._create_socket = Mock()
         mock_conn = Mock()
         self.server.socket = Mock(accept=Mock(return_value=(mock_conn, ["TEST ADDRESS", 5555])))
+
         # listen just once or we'll never get out of the loop
         def fn(conn):
             self.assertTrue(self.server.listening)
@@ -70,11 +72,15 @@ class TestSocketServer(unittest.TestCase):
         self.assertFalse(self.server.listening)
 
     def test_connection_removed_before_processing(self):
+
         def fn():
             self.server.stop_listening()
-            return mock.DEFAULT # so mock will return the return value we set >_>
-        self.server.prune_connections = Mock()
-        self.server.prune_connections.side_effect = fn
+            return mock.DEFAULT  # so mock will return the return value we set >_>
+        self.server._get_client_connection = Mock()
+        self.server._get_client_connection.return_value = Mock()
+        self.server._get_client_connection.return_value.is_to_be_closed = Mock(return_value=True)
+        self.server._get_client_connection.return_value.is_to_be_closed.side_effect = fn
+
         stevesockets.server.select.select = Mock(return_value=[[Mock()], [], []])
         self.server._create_socket()
         self.server.socket.accept = Mock(return_value=(Mock(), ("TEST ADDRESS", 5555)))
@@ -82,6 +88,7 @@ class TestSocketServer(unittest.TestCase):
         self.server.listen()
 
         self.server.handle_connection.assert_not_called()
+
 
 class TestWebSocketServer(unittest.TestCase):
 

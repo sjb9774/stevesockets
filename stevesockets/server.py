@@ -1,6 +1,12 @@
 import logging
-import socket, select, threading
+import socket
+import select
+import threading
 import collections
+from stevesockets.websocket import WebSocketFrame
+import base64
+import hashlib
+
 
 class SocketConnection:
 
@@ -57,8 +63,8 @@ class SocketConnection:
     def is_to_be_closed(self):
         return self.to_be_closed
 
-class SocketServer:
 
+class SocketServer:
     connection_cls = SocketConnection
 
     def __init__(self, address=('127.0.0.1', 9000), logger=None):
@@ -66,6 +72,7 @@ class SocketServer:
         self.listening = False
         self.set_logger(logger if logger else logging.getLogger())
         self.connections = []
+        self.handle_message = None
 
     def _create_socket(self):
         self.logger.debug("Creating socket @ {addr}:{port}".format(addr=self.address[0], port=self.address[1]))
@@ -89,7 +96,8 @@ class SocketServer:
         sck, addr = self.socket.accept()
         self.logger.debug("{addr}".format(addr=addr))
         connection = self.connection_cls(sck, addr[0], addr[1], logger=self.logger)
-        self.logger.debug("New connection created at {addr}:{port}".format(addr=connection.address, port=connection.port))
+        self.logger.debug(
+            "New connection created at {addr}:{port}".format(addr=connection.address, port=connection.port))
         return connection
 
     def prune_connections(self):
@@ -99,13 +107,14 @@ class SocketServer:
         new_connection_list = self.connections[:]
         for connection in self.connections:
             if connection.is_to_be_closed():
-                self.logger.warn("Connection @ {addr}:{port} to be closed before recieving data? closing".format(addr=connection.address, port=connection.port))
+                self.logger.warn("Connection @ {addr}:{port} to be closed before receiving data? closing".format(
+                    addr=connection.address, port=connection.port))
                 new_connection_list.remove(connection)
                 self._close_connection(connection)
-            elif connection.is_closed(): # this can happen in when running asynchronously
+            elif connection.is_closed():  # this can happen in when running asynchronously
                 new_connection_list.remove(connection)
             elif connection.socket.fileno() == -1:
-                logger.warn("Connection with invalid file descriptor not closed or marked for closure")
+                self.logger.warn("Connection with invalid file descriptor not closed or marked for closure")
                 self._close_connection(connection)
                 new_connection_list.remove(connection)
         self.connections = new_connection_list
@@ -144,7 +153,8 @@ class SocketServer:
                         if avail_data:
                             response = self.connection_handler(connection)
                             if response:
-                                self.logger.debug("Sending message {r}".format(r=response.encode() if hasattr(response, "encode") else response))
+                                self.logger.debug("Sending message {r}".format(
+                                    r=response.encode() if hasattr(response, "encode") else response))
                                 connection.queue_message(response.encode() if hasattr(response, "encode") else response)
                         connection.flush_messages()
                     except socket.error as err:
@@ -171,9 +181,9 @@ class SocketServer:
             return None
 
     def handle_message(self, connection, data):
-        """ Should be overriden by subclasses. Responsible for taking raw bytes and
+        """ Should be overridden by subclasses. Responsible for taking raw bytes and
             returning the business logic response in bytes """
-        return "Hello world"
+        return "Hello World"
 
     def message_handler(self, fn):
         """ This decorator can be used to simply set a handle_message without subclassing """
@@ -202,11 +212,8 @@ class SocketServer:
         self.logger.debug("Stopping listening")
         self.listening = False
 
-from stevesockets.websocket import WebSocketFrame
-import base64, hashlib
 
 class WebSocketConnection(SocketConnection):
-
     CLOSED = "closed"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -224,7 +231,9 @@ class WebSocketConnection(SocketConnection):
         self.set_status(WebSocketConnection.CLOSED)
 
     def set_status(self, status):
-        self.logger.debug("Setting connection @ {addr}:{port} status to '{status}'".format(addr=self.address, port=self.port, status=status))
+        self.logger.debug(
+            "Setting connection @ {addr}:{port} status to '{status}'".format(addr=self.address, port=self.port,
+                                                                             status=status))
         self.status = status
 
     def get_status(self):
@@ -232,7 +241,6 @@ class WebSocketConnection(SocketConnection):
 
 
 class WebSocketServer(SocketServer):
-
     connection_cls = WebSocketConnection
     WEBSOCKET_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -255,7 +263,7 @@ class WebSocketServer(SocketServer):
             self.fragmented_messages.setdefault(conn, [])
             self.fragmented_messages[conn].append(frame)
             return None
-        else: # is final frame
+        else:  # is final frame
             message_fragments = self.fragmented_messages.get(conn)
             if message_fragments:
                 complete_message = "".join(f.message for f in message_fragments)
@@ -267,7 +275,7 @@ class WebSocketServer(SocketServer):
                 return WebSocketFrame(message=frame.message, opcode=WebSocketFrame.OPCODE_PONG).to_bytes()
             elif frame.opcode == WebSocketFrame.OPCODE_PONG:
                 self.logger.debug("Recieved PONG, ignoring")
-                return None # ignore pongs
+                return None  # ignore pongs
             elif frame.opcode == WebSocketFrame.OPCODE_CLOSE:
                 self.logger.debug("Recieved close frame with message: {m}".format(m=frame.message))
                 if conn.is_to_be_closed():
@@ -276,28 +284,33 @@ class WebSocketServer(SocketServer):
                 else:
                     conn.mark_for_closing()
                     return WebSocketFrame(message=frame.message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes()
-            else: #normal message
+            else:  # normal message
                 complete_message = frame.message
         response = self.handle_message(conn, complete_message)
         return WebSocketFrame(message=response).to_bytes()
 
     def _close_connection(self, connection, close_message="Connection closing"):
-        self.logger.debug("Connection @ {addr}:{port} starting graceful closure".format(addr=connection.address, port=connection.port))
+        self.logger.debug("Connection @ {addr}:{port} starting graceful closure".format(addr=connection.address,
+                                                                                        port=connection.port))
         last_msg = connection.peek_message()
-        if connection.is_handshook() and not connection.is_closed() and (not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
+        if connection.is_handshook() and not connection.is_closed() and (
+                not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
             self.logger.debug("Close frame not already queued up, adding one")
-            connection.queue_message(WebSocketFrame(message=close_message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
+            connection.queue_message(
+                WebSocketFrame(message=close_message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
             connection.flush_messages()
             # get the one last closing frame that should be incoming
             self.connection_handler(connection)
             if not connection.is_to_be_closed():
-                self.logger.warn("Connection @ {addr}:{port} didn't recieve close frame back from client".format(addr=connection.address, port=connection.port))
+                self.logger.warn("Connection @ {addr}:{port} didn't recieve close frame back from client".format(
+                    addr=connection.address, port=connection.port))
         super(WebSocketServer, self)._close_connection(connection)
 
     def _get_websocket_accept(self, key):
         return base64.b64encode(hashlib.sha1((key + self.WEBSOCKET_MAGIC).encode()).digest()).decode()
 
-    def send_http_response(self, conn, status, headers=None):
+    @staticmethod
+    def send_http_response(cls, conn, status, headers=None):
         descriptions = {
             101: "Switching Protocols",
 
@@ -315,7 +328,8 @@ class WebSocketServer(SocketServer):
             503: "Service Unavailable",
             504: "Gateway Timeout"
         }
-        msg = "HTTP/1.1 {status} {status_description}\r\n".format(status=status, status_description=descriptions.get(status, ""))
+        msg = "HTTP/1.1 {status} {status_description}\r\n".format(status=status,
+                                                                  status_description=descriptions.get(status, ""))
         if headers:
             for header, value in headers.items():
                 msg += "{header}: {value}\r\n".format(header=header, value=value)

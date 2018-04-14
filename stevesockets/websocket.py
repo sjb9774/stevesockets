@@ -1,6 +1,7 @@
-from logging import getLogger as get_logger
+from logging import getLogger
+import random
 
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 
 def bits_value(bits):
@@ -11,8 +12,9 @@ def bits_value(bits):
     for i, bit in enumerate(bits):
         if bit not in ("1", "0"):
             raise ValueError("Invalid bit string")
-        total += int(bit) * (2**(p-i))
+        total += int(bit) * (2 ** (p - i))
     return total
+
 
 def to_binary(n, pad_to=None):
     if type(n) != int:
@@ -32,15 +34,11 @@ def to_binary(n, pad_to=None):
             result = "0" + result
     return result
 
-import select
-import random
-
 
 class WebSocketFrame:
-
-    OPCODE_CLOSE    = 8
-    OPCODE_PING     = 9
-    OPCODE_PONG     = 10
+    OPCODE_CLOSE = 8
+    OPCODE_PING = 9
+    OPCODE_PONG = 10
 
     def __init__(self, fin=1, opcode=1, rsv=0, mask=None, message=""):
         self.fin = fin
@@ -59,7 +57,7 @@ class WebSocketFrame:
         full_bit_str += to_binary(self.mask_flag, pad_to=1)
         if self.payload_length <= 125:
             full_bit_str += to_binary(self.payload_length, pad_to=7)
-        elif self.payload_length > 125 and self.payload_length < 2 ** 16:
+        elif (self.payload_length > 125) and (self.payload_length < 2 ** 16):
             full_bit_str += to_binary(126, pad_to=7)
             full_bit_str += to_binary(self.payload_length, pad_to=16)
         elif self.payload_length >= 2 ** 16:
@@ -68,7 +66,7 @@ class WebSocketFrame:
         if bool(self.mask_flag):
             mask_bits = to_binary(self.mask, pad_to=32)
             full_bit_str += mask_bits
-            mask_values = [bits_value(mask_bits[x:x+8]) for x in range(0, len(mask_bits), 8)]
+            mask_values = [bits_value(mask_bits[x:x + 8]) for x in range(0, len(mask_bits), 8)]
             masked_message = []
             for i, char in enumerate(self.message):
                 masked_message.append(ord(char) ^ mask_values[i % 4])
@@ -76,7 +74,7 @@ class WebSocketFrame:
         else:
             msg = [to_binary(x, pad_to=8) for x in (ord(y) for y in self.message)]
             full_bit_str += "".join(msg)
-        split_to_bytes = [bits_value(full_bit_str[x:x+8]) for x in range(0, len(full_bit_str), 8)]
+        split_to_bytes = [bits_value(full_bit_str[x:x + 8]) for x in range(0, len(full_bit_str), 8)]
         return bytes(split_to_bytes)
 
     @staticmethod
@@ -87,13 +85,16 @@ class WebSocketFrame:
     def from_bytes(cls, in_bytes):
         full_bit_str = "".join([to_binary(byte, pad_to=8) for byte in in_bytes])
         bit_generator = (bit for bit in full_bit_str)
-        get_next_bits = lambda x: "".join(next(bit_generator) for i in range(x))
+
+        def get_next_bits(n_bits):
+            return "".join(next(bit_generator) for i in range(n_bits))
 
         fin = bits_value(get_next_bits(1))
-        rsv = bits_value(get_next_bits(3)) # can be safely ignored
+        rsv = bits_value(get_next_bits(3))  # can be safely ignored
         opcode = bits_value(get_next_bits(4))
         mask_flag = bits_value(get_next_bits(1))
         bits_9_15_val = bits_value(get_next_bits(7))
+        payload_length = None
         if bits_9_15_val <= 125:
             payload_length = bits_9_15_val
         elif bits_9_15_val == 126:

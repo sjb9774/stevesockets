@@ -1,0 +1,6 @@
+*.pyc
+__pycache__
+.Python
+pip-selfcheck.json
+.venv
+.idea

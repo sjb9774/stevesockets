@@ -11,7 +11,7 @@ if __name__ == "__main__":
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    s = WebSocketServer(logger=logger)
+    s = WebSocketServer(address=('127.0.0.1', 9000), logger=logger)
 
     @s.message_handler
     def handler(conn, data):
