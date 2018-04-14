@@ -119,6 +119,13 @@ class SocketServer:
                 new_connection_list.remove(connection)
         self.connections = new_connection_list
 
+    def _build_connections(self):
+        conn, _, _ = select.select([self.socket], [], [], .1)
+        for c in conn:
+            connection = self._get_client_connection()
+            self.connections.append(connection)
+            self.logger.debug("Total connections: {n}".format(n=len(self.connections)))
+
     def listen(self):
         """ Creates and binds a socket connection at `address` on `port`, then listens for incoming
             client connections, reads data from them and sends back the return value of `connection_handler`
@@ -136,11 +143,7 @@ class SocketServer:
             self.listening = True
             while self.listening:
                 try:
-                    conn, _, _ = select.select([self.socket], [], [], .1)
-                    for c in conn:
-                        connection = self._get_client_connection()
-                        self.connections.append(connection)
-                        self.logger.debug("Total connections: {n}".format(n=len(self.connections)))
+                    self._build_connections()
                 except KeyboardInterrupt as err:
                     self.logger.warn("Manually interrupting server")
                     self.stop_listening()
@@ -167,9 +170,9 @@ class SocketServer:
             self._stop_server()
 
     def connection_handler(self, connection):
-        """ Takes a SocketConnection as an argument and passes data recieved from it
+        """ Takes a SocketConnection as an argument and passes data received from it
             to `handle_message` which should return the appropriate response for the
-            application. Can be overriden for preprocessing connections/data before
+            application. Can be overridden for pre-processing connections/data before
             building a response such as decoding/encoding data before it's passed to
             the business logic portion of your application """
         data = connection.socket.recv(4096)
@@ -310,7 +313,7 @@ class WebSocketServer(SocketServer):
         return base64.b64encode(hashlib.sha1((key + self.WEBSOCKET_MAGIC).encode()).digest()).decode()
 
     @staticmethod
-    def send_http_response(cls, conn, status, headers=None):
+    def send_http_response(conn, status, headers=None):
         descriptions = {
             101: "Switching Protocols",
 
