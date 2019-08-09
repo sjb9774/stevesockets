@@ -2,66 +2,10 @@ import logging
 import socket
 import select
 import threading
-import collections
-from stevesockets.websocket import WebSocketFrame
 import base64
 import hashlib
-
-
-class SocketConnection:
-
-    def __init__(self, sck, address, port, logger=None):
-        self.socket = sck
-        self.address = address
-        self.port = port
-        self.handshook = False
-        self.to_be_closed = False
-        self.closed = False
-        self.logger = logger if logger else logging.getLogger()
-        self.messages = collections.deque()
-
-    def close(self):
-        self.logger.debug("Closing connection at {addr}:{port}".format(addr=self.address, port=self.port))
-        self.socket.close()
-        self.closed = True
-
-    def read_data(self, size=4096):
-        return self.socket.recv(size)
-
-    def send_data(self, data):
-        self.socket.sendall(data)
-
-    def queue_message(self, message):
-        self.messages.append(message)
-
-    def flush_messages(self):
-        for x in range(len(self.messages)):
-            msg = self.messages.popleft()
-            try:
-                self.socket.sendall(msg)
-            except socket.error as err:
-                self.logger.error("Socket error while sending message: {err}".format(err=err))
-
-    def peek_message(self, n=0):
-        if len(self.messages) > n:
-            return self.messages[n]
-        else:
-            return None
-
-    def is_closed(self):
-        return self.closed
-
-    def mark_handshook(self):
-        self.handshook = True
-
-    def is_handshook(self):
-        return self.handshook
-
-    def mark_for_closing(self):
-        self.to_be_closed = True
-
-    def is_to_be_closed(self):
-        return self.to_be_closed
+from stevesockets.websocket import WebSocketFrame, SocketException
+from stevesockets.socketconnection import SocketConnection
 
 
 class SocketServer:
@@ -261,7 +205,13 @@ class WebSocketServer(SocketServer):
     def connection_handler(self, conn):
         data = conn.socket.recv(4096)
         self.logger.debug("Websocket server handling data: {data}".format(data=data))
-        frame = WebSocketFrame.from_bytes(data)
+        try:
+            frame = WebSocketFrame.from_bytes(data)
+        except SocketException:
+            self.logger.warning("Connection closed prematurely, marking for closing")
+            conn.mark_for_closing()
+            return None
+
         if not bool(frame.fin):
             self.fragmented_messages.setdefault(conn, [])
             self.fragmented_messages[conn].append(frame)
@@ -274,15 +224,15 @@ class WebSocketServer(SocketServer):
                 self.fragmented_messages[conn] = []
             # check for special frames (PING, close, etc)
             elif frame.opcode == WebSocketFrame.OPCODE_PING:
-                self.logger.debug("Recieved PING, sending PONG")
+                self.logger.debug("Received PING, sending PONG")
                 return WebSocketFrame(message=frame.message, opcode=WebSocketFrame.OPCODE_PONG).to_bytes()
             elif frame.opcode == WebSocketFrame.OPCODE_PONG:
-                self.logger.debug("Recieved PONG, ignoring")
+                self.logger.debug("Received PONG, ignoring")
                 return None  # ignore pongs
             elif frame.opcode == WebSocketFrame.OPCODE_CLOSE:
-                self.logger.debug("Recieved close frame with message: {m}".format(m=frame.message))
+                self.logger.debug("Received close frame with message: {m}".format(m=frame.message))
                 if conn.is_to_be_closed():
-                    self.logger.warn("Connection is already marked for closing, ignoring addtional close frame")
+                    self.logger.warn("Connection is already marked for closing, ignoring additional close frame")
                     return None
                 else:
                     conn.mark_for_closing()
@@ -296,8 +246,8 @@ class WebSocketServer(SocketServer):
         self.logger.debug("Connection @ {addr}:{port} starting graceful closure".format(addr=connection.address,
                                                                                         port=connection.port))
         last_msg = connection.peek_message()
-        if connection.is_handshook() and not connection.is_closed() and (
-                not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
+        if connection.is_handshook() and not connection.is_closed() and \
+                (not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
             self.logger.debug("Close frame not already queued up, adding one")
             connection.queue_message(
                 WebSocketFrame(message=close_message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())

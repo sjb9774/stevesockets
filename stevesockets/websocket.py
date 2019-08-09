@@ -87,7 +87,14 @@ class WebSocketFrame:
         bit_generator = (bit for bit in full_bit_str)
 
         def get_next_bits(n_bits):
-            return "".join(next(bit_generator) for i in range(n_bits))
+            bits = ""
+            for i in range(n_bits):
+                try:
+                    next_batch = next(bit_generator)
+                except StopIteration as err:
+                    raise SocketException
+                bits += next_batch
+            return bits
 
         fin = bits_value(get_next_bits(1))
         rsv = bits_value(get_next_bits(3))  # can be safely ignored
@@ -113,3 +120,7 @@ class WebSocketFrame:
             message += char
         f = cls(fin=fin, opcode=opcode, rsv=rsv, mask=bits_value(mask) if mask else None, message=message)
         return f
+
+
+class SocketException(Exception):
+    pass
