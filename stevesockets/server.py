@@ -4,7 +4,7 @@ import select
 import threading
 import base64
 import hashlib
-from stevesockets.websocket import WebSocketFrame, SocketException
+from stevesockets.websocket import WebSocketFrame, SocketException, WebSocketFrameHeaders, SocketBytesReader
 from stevesockets.socketconnection import SocketConnection
 
 
@@ -100,10 +100,7 @@ class SocketServer:
                         if avail_data:
                             response = self.connection_handler(connection)
                             if response:
-                                self.logger.debug("Sending message {r}".format(
-                                    r=response.encode() if hasattr(response, "encode") else response))
-                                connection.queue_message(response.encode() if hasattr(response, "encode") else response)
-                        connection.flush_messages()
+                                self.on_message(connection, response)
                     except socket.error as err:
                         self.logger.warning("Socket error '{err}'".format(err=err))
                         self._close_connection(connection)
@@ -113,6 +110,12 @@ class SocketServer:
                         break
             self._stop_server()
 
+    def on_message(self, connection, response):
+        self.logger.debug("Sending message {r}".format(
+            r=response.encode() if hasattr(response, "encode") else response))
+        connection.queue_message(response.encode() if hasattr(response, "encode") else response)
+        connection.flush_messages()
+
     def connection_handler(self, connection):
         """ Takes a SocketConnection as an argument and passes data received from it
             to `handle_message` which should return the appropriate response for the
@@ -121,7 +124,7 @@ class SocketServer:
             the business logic portion of your application """
         data = connection.socket.recv(4096)
         if data:
-            response = self.handle_message(connection, data)
+            response = self.handle_message(self, connection, data)
             return response
         else:
             connection.mark_for_closing()
@@ -161,6 +164,7 @@ class SocketServer:
 
 
 class WebSocketConnection(SocketConnection):
+
     CLOSED = "closed"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -190,6 +194,7 @@ class WebSocketConnection(SocketConnection):
 class WebSocketServer(SocketServer):
     connection_cls = WebSocketConnection
     WEBSOCKET_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    MAX_BUFFER_SIZE = 4096
 
     def __init__(self, address=('127.0.0.1', 9000), logger=None):
         super(WebSocketServer, self).__init__(address=address, logger=logger)
@@ -203,16 +208,17 @@ class WebSocketServer(SocketServer):
         return conn
 
     def connection_handler(self, conn):
-        data = conn.socket.recv(4096)
-        self.logger.debug("Websocket server handling data: {data}".format(data=data))
+        bytes_reader = SocketBytesReader(conn)
+
+        self.logger.debug("Websocket server handling incoming data" )
         try:
-            frame = WebSocketFrame.from_bytes(data)
+            frame = WebSocketFrame.from_bytes_reader(bytes_reader)
         except SocketException:
             self.logger.warning("Connection closed prematurely, marking for closing")
             conn.mark_for_closing()
             return None
 
-        if not bool(frame.fin):
+        if not bool(frame.headers.fin):
             self.fragmented_messages.setdefault(conn, [])
             self.fragmented_messages[conn].append(frame)
             return None
@@ -223,23 +229,29 @@ class WebSocketServer(SocketServer):
                 complete_message += frame.message
                 self.fragmented_messages[conn] = []
             # check for special frames (PING, close, etc)
-            elif frame.opcode == WebSocketFrame.OPCODE_PING:
+            elif frame.headers.opcode == WebSocketFrame.OPCODE_PING:
                 self.logger.debug("Received PING, sending PONG")
-                return WebSocketFrame(message=frame.message, opcode=WebSocketFrame.OPCODE_PONG).to_bytes()
-            elif frame.opcode == WebSocketFrame.OPCODE_PONG:
+                return WebSocketFrame(
+                    message=frame.message,
+                    headers=WebSocketFrameHeaders(opcode=WebSocketFrame.OPCODE_PONG)
+                ).to_bytes()
+            elif frame.headers.opcode == WebSocketFrame.OPCODE_PONG:
                 self.logger.debug("Received PONG, ignoring")
                 return None  # ignore pongs
-            elif frame.opcode == WebSocketFrame.OPCODE_CLOSE:
+            elif frame.headers.opcode == WebSocketFrame.OPCODE_CLOSE:
                 self.logger.debug("Received close frame with message: {m}".format(m=frame.message))
                 if conn.is_to_be_closed():
                     self.logger.warn("Connection is already marked for closing, ignoring additional close frame")
                     return None
                 else:
                     conn.mark_for_closing()
-                    return WebSocketFrame(message=frame.message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes()
+                    return WebSocketFrame(
+                        message=frame.message,
+                        headers=WebSocketFrameHeaders(opcode=WebSocketFrame.OPCODE_CLOSE)
+                    ).to_bytes()
             else:  # normal message
                 complete_message = frame.message
-        response = self.handle_message(conn, complete_message)
+        response = self.handle_message(self, conn, complete_message)
         return WebSocketFrame(message=response).to_bytes()
 
     def _close_connection(self, connection, close_message="Connection closing"):
@@ -247,10 +259,14 @@ class WebSocketServer(SocketServer):
                                                                                         port=connection.port))
         last_msg = connection.peek_message()
         if connection.is_handshook() and not connection.is_closed() and \
-                (not last_msg or WebSocketFrame.from_bytes(last_msg).opcode != WebSocketFrame.OPCODE_CLOSE):
+                (not last_msg or WebSocketFrame.from_bytes(last_msg, self.MAX_BUFFER_SIZE).opcode != WebSocketFrame.OPCODE_CLOSE):
             self.logger.debug("Close frame not already queued up, adding one")
             connection.queue_message(
-                WebSocketFrame(message=close_message, opcode=WebSocketFrame.OPCODE_CLOSE).to_bytes())
+                WebSocketFrame(
+                    message=close_message,
+                    headers=WebSocketFrameHeaders(opcode=WebSocketFrame.OPCODE_CLOSE)
+                ).to_bytes()
+            )
             connection.flush_messages()
             # get the one last closing frame that should be incoming
             self.connection_handler(connection)

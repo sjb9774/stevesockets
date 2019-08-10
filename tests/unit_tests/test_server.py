@@ -57,7 +57,7 @@ class TestSocketServer(unittest.TestCase):
         resp = self.server.connection_handler(connection_mock)
         self.assertEqual(resp, "TEST")
         connection_mock.socket.recv.assert_called_once_with(4096)
-        self.server.handle_message.assert_called_once_with(connection_mock, "MOCK BYTES")
+        self.server.handle_message.assert_called_once_with(self.server, connection_mock, "MOCK BYTES")
 
     def test_connection_handler_without_resp(self):
         c = Mock()
@@ -108,14 +108,14 @@ class TestWebSocketServer(unittest.TestCase):
     def test_handle_message_without_mask(self):
         msg = b'\x81\tTEST DATA'
         mock_connection = self._mock_connection(returns=msg)
-        self.server.handle_message = lambda self, message: message
+        self.server.handle_message = lambda self, conn, message: message
         resp = self.server.connection_handler(mock_connection)
         self.assertEqual(resp, b'\x81\tTEST DATA')
 
     def test_handle_message_with_mask(self):
         msg = b'\x81\x89\xc0\x9c}"\x94\xd9.v\xe0\xd8<v\x81'
         mock_connection = self._mock_connection(returns=msg)
-        self.server.handle_message = lambda self, message: message
+        self.server.handle_message = lambda self, conn, message: message
         resp = self.server.connection_handler(mock_connection)
         self.assertEqual(resp, b'\x81\tTEST DATA')
 
@@ -194,5 +194,5 @@ class TestWebSocketServer(unittest.TestCase):
         mock_connection.socket.recv = Mock(return_value=msg3)
         self.server.handle_message = Mock(return_value="TEST")
         r3 = self.server.connection_handler(mock_connection)
-        self.server.handle_message.assert_called_once_with(mock_connection, text1+text2+text3)
+        self.server.handle_message.assert_called_once_with(self.server, mock_connection, text1+text2+text3)
         self.assertEqual(r3, b'\x81\x04TEST')

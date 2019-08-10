@@ -19,7 +19,8 @@ if __name__ == "__main__":
     s = WebSocketServer(address=('127.0.0.1', args.port), logger=logger)
 
     @s.message_handler
-    def handler(conn, data):
-        return data
+    def handler(server, conn, data):
+        logger.debug('Decoded data: {data}'.format(data=data))
+        return "This is Steve's server saying 'Hello!'"
 
     s.listen()
