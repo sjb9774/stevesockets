@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import Mock, MagicMock
 from unittest import mock
 import stevesockets.server
-import socket
 
 
 class TestSocketServer(unittest.TestCase):
@@ -101,7 +100,15 @@ class TestWebSocketServer(unittest.TestCase):
     def _mock_connection(self, returns=None, handshook=True):
         m = Mock()
         m.socket = Mock()
-        m.socket.recv.return_value = returns
+        return_value_generator = (returns[i:i+1] for i in range(len(returns))) if returns else (x for x in [None])
+
+        def mock_recv(n):
+            bytes_value = b''
+            for x in range(n):
+                bytes_value += next(return_value_generator)
+            return bytes(bytes_value)
+
+        m.socket.recv = mock_recv
         m.handshook = handshook
         return m
 
@@ -163,9 +170,9 @@ class TestWebSocketServer(unittest.TestCase):
         resp = self.server.connection_handler(conn_mock)
         conn_mock.mark_for_closing.assert_called_once_with()
 
+        conn_mock = self._mock_connection(returns=b'\x88\x00')
         conn_mock.is_to_be_closed.return_value = True
         resp2 = self.server.connection_handler(conn_mock)
-        self.assertEqual(conn_mock.is_to_be_closed.call_count, 2)
         self.assertIsNone(resp2)
 
     def test_connection_handler_fragmented_message_no_mask(self):
@@ -185,13 +192,11 @@ class TestWebSocketServer(unittest.TestCase):
                                                          "final message")
 
     def _test_connection_handler_fragmented_message(self, msg1, msg2, msg3, text1, text2, text3):
-        mock_connection = self._mock_connection(returns=msg1)
+        mock_connection = self._mock_connection(returns=msg1+msg2+msg3)
         r1 = self.server.connection_handler(mock_connection)
         self.assertIsNone(r1)
-        mock_connection.socket.recv = Mock(return_value=msg2)
         r2 = self.server.connection_handler(mock_connection)
         self.assertIsNone(r2)
-        mock_connection.socket.recv = Mock(return_value=msg3)
         self.server.handle_message = Mock(return_value="TEST")
         r3 = self.server.connection_handler(mock_connection)
         self.server.handle_message.assert_called_once_with(self.server, mock_connection, text1+text2+text3)
