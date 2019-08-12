@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import Mock, MagicMock
 from unittest import mock
+from tests import utils
 import stevesockets.server
 
 
@@ -97,31 +98,16 @@ class TestWebSocketServer(unittest.TestCase):
         stevesockets.server.threading = Mock()
         self.server = stevesockets.server.WebSocketServer()
 
-    def _mock_connection(self, returns=None, handshook=True):
-        m = Mock()
-        m.socket = Mock()
-        return_value_generator = (returns[i:i+1] for i in range(len(returns))) if returns else (x for x in [None])
-
-        def mock_recv(n):
-            bytes_value = b''
-            for x in range(n):
-                bytes_value += next(return_value_generator)
-            return bytes(bytes_value)
-
-        m.socket.recv = mock_recv
-        m.handshook = handshook
-        return m
-
     def test_handle_message_without_mask(self):
         msg = b'\x81\tTEST DATA'
-        mock_connection = self._mock_connection(returns=msg)
+        mock_connection = utils.get_mock_connection(returns=msg)
         self.server.handle_message = lambda self, conn, message: message
         resp = self.server.connection_handler(mock_connection)
         self.assertEqual(resp, b'\x81\tTEST DATA')
 
     def test_handle_message_with_mask(self):
         msg = b'\x81\x89\xc0\x9c}"\x94\xd9.v\xe0\xd8<v\x81'
-        mock_connection = self._mock_connection(returns=msg)
+        mock_connection = utils.get_mock_connection(returns=msg)
         self.server.handle_message = lambda self, conn, message: message
         resp = self.server.connection_handler(mock_connection)
         self.assertEqual(resp, b'\x81\tTEST DATA')
@@ -129,7 +115,7 @@ class TestWebSocketServer(unittest.TestCase):
     def test_handle_handshake(self):
         client_handshake = bytes("GET / HTTP/1.1\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n", "utf-8")
         self.server.send_http_response = Mock()
-        mock_conn = self._mock_connection()
+        mock_conn = utils.get_mock_connection()
         self.server.handle_websocket_handshake(mock_conn, client_handshake)
         self.server.send_http_response.assert_called_once_with(mock_conn, 101, headers={
             "Upgrade": "websocket",
@@ -138,17 +124,17 @@ class TestWebSocketServer(unittest.TestCase):
         })
 
     def test_connection_handler_ping(self):
-        conn_mock = self._mock_connection(returns=b'\x89\x00')
+        conn_mock = utils.get_mock_connection(returns=b'\x89\x00')
         resp = self.server.connection_handler(conn_mock)
         self.assertEqual(resp, b'\x8a\x00') # messageless PONG response
 
     def test_connection_handler_pong(self):
-        conn_mock = self._mock_connection(returns=b'\x8a\x00')
+        conn_mock = utils.get_mock_connection(returns=b'\x8a\x00')
         resp = self.server.connection_handler(conn_mock)
         self.assertIsNone(resp)
 
     def test__close_connection(self):
-        mock_connection = self._mock_connection()
+        mock_connection = utils.get_mock_connection()
         close_frame = b'\x88\x00'
         mock_connection.peek_message = Mock(return_value=close_frame)
         self.server.connection_handler = Mock()
@@ -157,7 +143,7 @@ class TestWebSocketServer(unittest.TestCase):
         mock_connection.queue_message.assert_not_called()
 
     def test_connection_close(self):
-        conn_mock = self._mock_connection(returns=b'\x88\x00')
+        conn_mock = utils.get_mock_connection(returns=b'\x88\x00')
         conn_mock.is_to_be_closed = Mock(return_value=False)
         resp = self.server.connection_handler(conn_mock)
         conn_mock.is_to_be_closed.assert_called_once_with()
@@ -165,12 +151,12 @@ class TestWebSocketServer(unittest.TestCase):
         self.assertEqual(resp, b'\x88\x00')
 
     def test_connection_close_twice(self):
-        conn_mock = self._mock_connection(returns=b'\x88\x00')
+        conn_mock = utils.get_mock_connection(returns=b'\x88\x00')
         conn_mock.is_to_be_closed.return_value = False
         resp = self.server.connection_handler(conn_mock)
         conn_mock.mark_for_closing.assert_called_once_with()
 
-        conn_mock = self._mock_connection(returns=b'\x88\x00')
+        conn_mock = utils.get_mock_connection(returns=b'\x88\x00')
         conn_mock.is_to_be_closed.return_value = True
         resp2 = self.server.connection_handler(conn_mock)
         self.assertIsNone(resp2)
@@ -192,7 +178,7 @@ class TestWebSocketServer(unittest.TestCase):
                                                          "final message")
 
     def _test_connection_handler_fragmented_message(self, msg1, msg2, msg3, text1, text2, text3):
-        mock_connection = self._mock_connection(returns=msg1+msg2+msg3)
+        mock_connection = utils.get_mock_connection(returns=msg1+msg2+msg3)
         r1 = self.server.connection_handler(mock_connection)
         self.assertIsNone(r1)
         r2 = self.server.connection_handler(mock_connection)

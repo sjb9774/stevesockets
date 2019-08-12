@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import Mock
-from stevesockets.websocket import WebSocketFrame, bits_value, to_binary, SocketException
+from tests import utils
+from stevesockets.websocket import WebSocketFrame, bits_value, to_binary, SocketException, SocketBytesReader
+from stevesockets.websocket import WebSocketFrameHeaders
 
 
 class TestBitsFunctions(unittest.TestCase):
@@ -51,14 +53,20 @@ class TestBitsFunctions(unittest.TestCase):
 
 class TestWebSocketFrame(unittest.TestCase):
 
+    def _get_mock_bytes_reader(self, bytes=None, handshook=True):
+        conn = utils.get_mock_connection(returns=bytes, handshook=handshook)
+        reader = SocketBytesReader(conn)
+        return reader
+
     def test_webframe_from_bytes_non_fragmented(self):
         data = b'\x81\x89I\x96k\xa8\x1d\xd38\xfci\xd2*\xfc\x08'
-        f = WebSocketFrame.from_bytes(data)
+        reader = self._get_mock_bytes_reader(bytes=data)
+        f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.message, "TEST DATA")
-        self.assertEqual(f.payload_length, 9)
-        self.assertEqual(f.opcode, 1)
-        self.assertEqual(f.mask_flag, 1)
-        self.assertEqual(f.mask, bits_value("01001001100101100110101110101000"))
+        self.assertEqual(f.headers.payload_length, 9)
+        self.assertEqual(f.headers.opcode, 1)
+        self.assertEqual(f.headers.mask_flag, 1)
+        self.assertEqual(f.headers.mask, bits_value("01001001100101100110101110101000"))
 
     def test_webframe_to_bytes_non_fragmented_no_mask(self):
         f = WebSocketFrame(message="TEST DATA")
@@ -68,38 +76,46 @@ class TestWebSocketFrame(unittest.TestCase):
     def test_webframe_to_bytes_non_fragmented_with_mask(self):
         # generating a mask is usually random which is not good for testing
         WebSocketFrame.generate_mask = Mock(return_value=525161)
-        f = WebSocketFrame(message="TEST DATA", mask=WebSocketFrame.generate_mask())
+        f = WebSocketFrame(
+            message="TEST DATA",
+            headers=WebSocketFrameHeaders(mask=WebSocketFrame.generate_mask(), mask_flag=1)
+        )
         self.assertEqual(f.to_bytes(), b'\x81\x89\x00\x08\x03iTMP= LB=A')
 
     def test_webframe_from_bytes_non_fragmented_no_mask(self):
         bstr = b'\x81\tTEST DATA'
-        f = WebSocketFrame.from_bytes(bstr)
+        reader = self._get_mock_bytes_reader(bytes=bstr)
+        f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.message, "TEST DATA")
-        self.assertEqual(f.payload_length, 9)
-        self.assertIsNone(f.mask)
+        self.assertEqual(f.headers.payload_length, 9)
+        self.assertIsNone(f.headers.mask)
 
     def test_webframe_from_bytes_non_fragmented_with_mask(self):
         bstr = b'\x81\x89\x13}\xfd\xb7G8\xae\xe339\xbc\xe3R'
-        f = WebSocketFrame.from_bytes(bstr)
-        self.assertEqual(f.mask, 327024055)
-        self.assertEqual(f.payload_length, 9)
+        reader = self._get_mock_bytes_reader(bytes=bstr)
+        f = WebSocketFrame.from_bytes_reader(reader)
+        self.assertEqual(f.headers.mask, 327024055)
+        self.assertEqual(f.headers.payload_length, 9)
         self.assertEqual(f.message, "TEST DATA")
 
     def test_webframe_from_bytes_fragmented_126_payload_no_mask(self):
         bstr = b'\x81~\x00~TEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATA'
-        f = WebSocketFrame.from_bytes(bstr)
+        reader = self._get_mock_bytes_reader(bytes=bstr)
+        f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.message, "TEST DATA" * 14)
-        self.assertEqual(f.payload_length, 126)
-        self.assertIsNone(f.mask)
+        self.assertEqual(f.headers.payload_length, 126)
+        self.assertIsNone(f.headers.mask)
 
     def test_webframe_from_bytes_fragmented_127_payload_no_mask(self):
         bstr = b'\x81\x7f\x00\x00\x00\x00\x00\x00\x00\x87TEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATA'
-        f = WebSocketFrame.from_bytes(bstr)
+        reader = self._get_mock_bytes_reader(bytes=bstr)
+        f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.message, "TEST DATA" * 15)
-        self.assertEqual(f.payload_length, 135)
-        self.assertIsNone(f.mask)
+        self.assertEqual(f.headers.payload_length, 135)
+        self.assertIsNone(f.headers.    mask)
 
     def test_webframe_premature_ending(self):
         bstr = b'\x819'
-        with self.assertRaises(SocketException):
-            WebSocketFrame.from_bytes(bstr)
+        reader = self._get_mock_bytes_reader(bytes=bstr)
+        with self.assertRaises(StopIteration):
+            WebSocketFrame.from_bytes_reader(reader)
