@@ -210,10 +210,10 @@ class WebSocketServer(SocketServer):
     def connection_handler(self, conn):
         bytes_reader = SocketBytesReader(conn)
 
-        self.logger.debug("Websocket server handling incoming data" )
+        self.logger.debug("Websocket server handling incoming data")
         try:
             frame = WebSocketFrame.from_bytes_reader(bytes_reader)
-        except SocketException:
+        except (SocketException, ConnectionResetError):
             self.logger.warning("Connection closed prematurely, marking for closing")
             conn.mark_for_closing()
             return None
@@ -271,7 +271,7 @@ class WebSocketServer(SocketServer):
             # get the one last closing frame that should be incoming
             self.connection_handler(connection)
             if not connection.is_to_be_closed():
-                self.logger.warn("Connection @ {addr}:{port} didn't recieve close frame back from client".format(
+                self.logger.warn("Connection @ {addr}:{port} didn't receive close frame back from client".format(
                     addr=connection.address, port=connection.port))
         super(WebSocketServer, self)._close_connection(connection)
 

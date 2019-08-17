@@ -98,6 +98,11 @@ class WebSocketFrame:
 
         return cls(headers=headers, message=message)
 
+    @classmethod
+    def read_from_connection(cls, connection):
+        reader = SocketBytesReader(connection)
+        return cls.from_bytes_reader(reader)
+
 
 class WebSocketFrameHeaders:
 
@@ -112,6 +117,8 @@ class WebSocketFrameHeaders:
     @classmethod
     def from_bytes(cls, bytes_reader):
         byte_str = bytes_reader.get_next_bytes(2)
+        if len(byte_str) < 16:
+            raise SocketException('Bytes reader yielded insufficient bytes to build headers')
 
         fin = bits_value(byte_str[0])
         rsv = bits_value(byte_str[1:4])  # can be safely ignored
