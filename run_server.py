@@ -4,9 +4,10 @@ import sys
 from stevesockets.server import WebSocketServer
 import logging
 import argparse
+from stevesockets import LOGGER_NAME
 
 if __name__ == "__main__":
-    logger = logging.getLogger("stevesockets.server.WebSocketServer")
+    logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.DEBUG)

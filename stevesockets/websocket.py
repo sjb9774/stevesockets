@@ -36,6 +36,10 @@ def to_binary(n, pad_to=None):
 
 
 class WebSocketFrame:
+    OPCODE_CONTINUATION = 0
+    OPCODE_TEXT = 1
+    OPCODE_BINARY = 2
+
     OPCODE_CLOSE = 8
     OPCODE_PING = 9
     OPCODE_PONG = 10
@@ -81,6 +85,16 @@ class WebSocketFrame:
     @staticmethod
     def generate_mask():
         return random.randint(0, (2 ** 32) - 1)
+
+    @classmethod
+    def get_close_frame(cls, message=None):
+        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_CLOSE, payload_length=len(message) if message else 0)
+        return WebSocketFrame(headers=headers, message=message)
+
+    @classmethod
+    def get_pong_frame(cls, message=None):
+        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_PONG, payload_length=len(message) if message else 0)
+        return WebSocketFrame(headers=headers, message=message)
 
     @classmethod
     def from_bytes_reader(cls, bytes_reader):

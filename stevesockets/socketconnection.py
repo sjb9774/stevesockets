@@ -29,6 +29,9 @@ class SocketConnection:
     def queue_message(self, message):
         self.messages.append(message)
 
+    def clear_messages(self):
+        self.messages.clear()
+
     def flush_messages(self):
         for x in range(len(self.messages)):
             msg = self.messages.popleft()
