@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="stevesockets",
-    version="0.0.7",
+    version="0.0.8",
     description="A simple socket and websocket server package",
     long_description="",
     url="https://github.com/sjb9774/stevesockets",
