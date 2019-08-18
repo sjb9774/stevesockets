@@ -40,12 +40,6 @@ class SocketConnection:
             except socket.error as err:
                 self.logger.error("Socket error while sending message: {err}".format(err=err))
 
-    def peek_message(self, n=0):
-        if len(self.messages) > n:
-            return self.messages[n]
-        else:
-            return None
-
     def is_closed(self):
         return self.closed
 

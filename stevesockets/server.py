@@ -7,10 +7,11 @@ import hashlib
 from stevesockets.websocket import WebSocketFrame, SocketException, WebSocketFrameHeaders, SocketBytesReader
 from stevesockets.socketconnection import SocketConnection
 from stevesockets.messages import MessageManager
-from stevesockets.listeners import CloseListener, TextListener, PingListener
+from stevesockets.listeners import CloseListener, TextListener, PingListener, MessageSynchronizer
 
 
 class SocketServer:
+
     connection_cls = SocketConnection
 
     def __init__(self, address=('127.0.0.1', 9000), logger=None):
@@ -119,9 +120,12 @@ class SocketServer:
         self.message_manager.dispatch_message(
             response,
             message_type=self.get_message_type(response),
-            connection=connection
+            connection=connection,
+            server=self
         )
-        connection.flush_messages()
+        # each message the server receives could queue messages in any given connection, so flush them all
+        for conn in self.connections:
+            conn.flush_messages()
 
     def get_message_type(self, message):
         return self.message_manager.default_message_type
@@ -202,6 +206,7 @@ class WebSocketConnection(SocketConnection):
 
 
 class WebSocketServer(SocketServer):
+
     connection_cls = WebSocketConnection
     WEBSOCKET_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
     MAX_BUFFER_SIZE = 4096
@@ -215,6 +220,7 @@ class WebSocketServer(SocketServer):
         self.message_manager.listen_for_message(CloseListener(), message_type=WebSocketFrame.OPCODE_CLOSE)
         self.message_manager.listen_for_message(PingListener(), message_type=WebSocketFrame.OPCODE_PING)
         self.message_manager.listen_for_message(TextListener(), message_type=WebSocketFrame.OPCODE_TEXT)
+        self.message_manager.listen_for_message(MessageSynchronizer(), message_type=WebSocketFrame.OPCODE_TEXT)
 
     def _get_client_connection(self):
         conn = super(WebSocketServer, self)._get_client_connection()
