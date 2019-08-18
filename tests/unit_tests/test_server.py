@@ -42,7 +42,6 @@ class TestSocketServer(unittest.TestCase):
         self.server._create_socket.assert_called_once_with()
         self.server.socket.close.assert_called_once_with()
         self.server.socket.accept()[0].close.assert_called_once_with()
-        mock_conn.sendall.assert_called_once_with("TEST".encode())
 
     @mock.patch("stevesockets.server.threading")
     def test_dlisten(self, threading):
@@ -92,25 +91,43 @@ class TestSocketServer(unittest.TestCase):
 
 class TestWebSocketServer(unittest.TestCase):
 
+    def _set_connections(self, connections):
+        self.server._get_client_connection = Mock(side_effect=(x for x in connections[:]))
+
     def setUp(self):
         stevesockets.server.socket = Mock()
         stevesockets.server.select = Mock(select=Mock(return_value=([Mock()], None, None)))
         stevesockets.server.threading = Mock()
         self.server = stevesockets.server.WebSocketServer()
+        self._set_connections([])
+        old_listen = self.server.listen
+
+        def listen_wrapper():
+            try:
+                old_listen()
+            except StopIteration:
+                # this should only be hit when we hit the end of connections set in _set_connectinos, which gives us a
+                # nice way of determining when to stop the listen() loop, so we'll just assume this is always valid
+                pass
+
+        self.server.listen = listen_wrapper
 
     def test_handle_message_without_mask(self):
         msg = b'\x81\tTEST DATA'
         mock_connection = utils.get_mock_connection(returns=msg)
         self.server.handle_message = lambda self, conn, message: message
         resp = self.server.connection_handler(mock_connection)
-        self.assertEqual(resp, b'\x81\tTEST DATA')
+        self.assertEqual(resp.to_bytes(), b'\x81\tTEST DATA')
 
     def test_handle_message_with_mask(self):
         msg = b'\x81\x89\xc0\x9c}"\x94\xd9.v\xe0\xd8<v\x81'
         mock_connection = utils.get_mock_connection(returns=msg)
         self.server.handle_message = lambda self, conn, message: message
         resp = self.server.connection_handler(mock_connection)
-        self.assertEqual(resp, b'\x81\tTEST DATA')
+
+        # setting mask_flag to 0 will have to_bytes() return the unmasked message for comparison
+        resp.headers.mask_flag = 0
+        self.assertEqual(resp.to_bytes(), b'\x81\tTEST DATA')
 
     def test_handle_handshake(self):
         client_handshake = bytes("GET / HTTP/1.1\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n", "utf-8")
@@ -124,42 +141,29 @@ class TestWebSocketServer(unittest.TestCase):
         })
 
     def test_connection_handler_ping(self):
+        # connection that returns a PING frame
         conn_mock = utils.get_mock_connection(returns=b'\x89\x00')
-        resp = self.server.connection_handler(conn_mock)
-        self.assertEqual(resp, b'\x8a\x00') # messageless PONG response
+        self._set_connections([conn_mock])
+        self.server.listen()
+        conn_mock.socket.sendall.assert_called_with(b'\x8a\x00')
 
     def test_connection_handler_pong(self):
         conn_mock = utils.get_mock_connection(returns=b'\x8a\x00')
-        resp = self.server.connection_handler(conn_mock)
-        self.assertIsNone(resp)
+        self._set_connections([conn_mock])
+        self.server.listen()
+        conn_mock.socket.sendall.assert_not_called()
 
     def test__close_connection(self):
         mock_connection = utils.get_mock_connection()
-        close_frame = b'\x88\x00'
-        mock_connection.peek_message = Mock(return_value=close_frame)
-        self.server.connection_handler = Mock()
+        mock_connection.close = Mock()
         self.server._close_connection(mock_connection)
-        mock_connection.peek_message.assert_called_once_with()
-        mock_connection.queue_message.assert_not_called()
+        mock_connection.close.assert_called_with()
 
-    def test_connection_close(self):
+    def test_connection_handler_close(self):
         conn_mock = utils.get_mock_connection(returns=b'\x88\x00')
         conn_mock.is_to_be_closed = Mock(return_value=False)
         resp = self.server.connection_handler(conn_mock)
-        conn_mock.is_to_be_closed.assert_called_once_with()
-        conn_mock.mark_for_closing.assert_called_once_with()
-        self.assertEqual(resp, b'\x88\x00')
-
-    def test_connection_close_twice(self):
-        conn_mock = utils.get_mock_connection(returns=b'\x88\x00')
-        conn_mock.is_to_be_closed.return_value = False
-        resp = self.server.connection_handler(conn_mock)
-        conn_mock.mark_for_closing.assert_called_once_with()
-
-        conn_mock = utils.get_mock_connection(returns=b'\x88\x00')
-        conn_mock.is_to_be_closed.return_value = True
-        resp2 = self.server.connection_handler(conn_mock)
-        self.assertIsNone(resp2)
+        self.assertEqual(resp.to_bytes(), b'\x88\x00')
 
     def test_connection_handler_fragmented_message_no_mask(self):
         self._test_connection_handler_fragmented_message(b'\x01\x11partial message 1',
@@ -180,10 +184,9 @@ class TestWebSocketServer(unittest.TestCase):
     def _test_connection_handler_fragmented_message(self, msg1, msg2, msg3, text1, text2, text3):
         mock_connection = utils.get_mock_connection(returns=msg1+msg2+msg3)
         r1 = self.server.connection_handler(mock_connection)
-        self.assertIsNone(r1)
+        self.assertEqual(r1.headers.fin, 0)
         r2 = self.server.connection_handler(mock_connection)
-        self.assertIsNone(r2)
+        self.assertEqual(r2.headers.fin, 0)
         self.server.handle_message = Mock(return_value="TEST")
         r3 = self.server.connection_handler(mock_connection)
-        self.server.handle_message.assert_called_once_with(self.server, mock_connection, text1+text2+text3)
-        self.assertEqual(r3, b'\x81\x04TEST')
+        self.assertEqual(r3.to_bytes(), msg3)

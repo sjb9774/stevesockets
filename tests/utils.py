@@ -1,9 +1,11 @@
 from unittest.mock import Mock
+from stevesockets.server import WebSocketConnection
 
 
-def get_mock_connection(returns=None, handshook=True):
-	m = Mock()
-	m.socket = Mock()
+def get_mock_connection(returns=None, handshook=True, to_be_closed=False, closed=False):
+	ws = WebSocketConnection(Mock())
+	ws.is_to_be_closed = Mock(return_value=to_be_closed)
+	ws.is_closed = Mock(return_value=closed)
 	return_value_generator = (returns[i:i + 1] for i in range(len(returns))) if returns else (x for x in [None])
 
 	def mock_recv(n):
@@ -12,7 +14,7 @@ def get_mock_connection(returns=None, handshook=True):
 			bytes_value += next(return_value_generator)
 		return bytes(bytes_value)
 
-	m.socket.recv = mock_recv
-	m.handshook = handshook
-	return m
+	ws.socket.recv = mock_recv
+	ws.handshook = handshook
+	return ws
 

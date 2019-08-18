@@ -54,6 +54,15 @@ class WebSocketFrame:
         self.message = message
         self.headers.payload_length = len(self.message) if self.message else 0
 
+    def get_unmasked_message(self):
+        message = ''
+        binary_mask = str(to_binary(self.headers.mask, pad_to=32))
+        for x in range(self.headers.payload_length):
+            char_data = self.message[x:x+1]
+            char = chr(bits_value(char_data) ^ bits_value(binary_mask[(x % 4) * 8:((x % 4) * 8) + 8]))
+            message += char
+        return message
+
     def to_bytes(self):
         full_bit_str = ""
         full_bit_str += to_binary(self.headers.fin, pad_to=1)
@@ -88,13 +97,13 @@ class WebSocketFrame:
 
     @classmethod
     def get_close_frame(cls, message=None):
-        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_CLOSE, payload_length=len(message) if message else 0)
+        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_CLOSE, payload_length=len(message.message) if message else 0)
         return WebSocketFrame(headers=headers, message=message)
 
     @classmethod
     def get_pong_frame(cls, message=None):
-        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_PONG, payload_length=len(message) if message else 0)
-        return WebSocketFrame(headers=headers, message=message)
+        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_PONG, payload_length=len(message.message) if message else 0)
+        return WebSocketFrame(headers=headers, message=message.message)
 
     @classmethod
     def from_bytes_reader(cls, bytes_reader):
