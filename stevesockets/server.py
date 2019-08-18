@@ -220,7 +220,6 @@ class WebSocketServer(SocketServer):
         self.register_listener(CloseListener, message_type=WebSocketFrame.OPCODE_CLOSE)
         self.register_listener(PingListener, message_type=WebSocketFrame.OPCODE_PING)
         self.register_listener(TextListener, message_type=WebSocketFrame.OPCODE_TEXT)
-        self.register_listener(MessageSynchronizer, message_type=WebSocketFrame.OPCODE_TEXT)
 
     def register_listener(self, listener_cls, message_type=None):
         self.message_manager.listen_for_message(listener_cls(), message_type=message_type)
