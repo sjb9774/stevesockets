@@ -91,9 +91,21 @@ class WebSocketFrame:
         split_to_bytes = [bits_value(full_bit_str[x:x + 8]) for x in range(0, len(full_bit_str), 8)]
         return bytes(split_to_bytes)
 
+    def encode(self):
+        # alias for to_bytes
+        return self.to_bytes()
+
     @staticmethod
     def generate_mask():
         return random.randint(0, (2 ** 32) - 1)
+
+
+    @classmethod
+    def get_text_frame(cls, message):
+        headers = WebSocketFrameHeaders(payload_length=len(message))
+        frame = WebSocketFrame(headers=headers, message=message)
+        return frame
+
 
     @classmethod
     def get_close_frame(cls, message=None):

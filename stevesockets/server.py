@@ -214,13 +214,15 @@ class WebSocketServer(SocketServer):
     def __init__(self, address=('127.0.0.1', 9000), logger=None):
         super(WebSocketServer, self).__init__(address=address, logger=logger)
         self.fragmented_messages = {}
-        self.setup_listeners()
 
     def setup_listeners(self):
-        self.message_manager.listen_for_message(CloseListener(), message_type=WebSocketFrame.OPCODE_CLOSE)
-        self.message_manager.listen_for_message(PingListener(), message_type=WebSocketFrame.OPCODE_PING)
-        self.message_manager.listen_for_message(TextListener(), message_type=WebSocketFrame.OPCODE_TEXT)
-        self.message_manager.listen_for_message(MessageSynchronizer(), message_type=WebSocketFrame.OPCODE_TEXT)
+        self.register_listener(CloseListener, message_type=WebSocketFrame.OPCODE_CLOSE)
+        self.register_listener(PingListener, message_type=WebSocketFrame.OPCODE_PING)
+        self.register_listener(TextListener, message_type=WebSocketFrame.OPCODE_TEXT)
+        self.register_listener(MessageSynchronizer, message_type=WebSocketFrame.OPCODE_TEXT)
+
+    def register_listener(self, listener_cls, message_type=None):
+        self.message_manager.listen_for_message(listener_cls(), message_type=message_type)
 
     def _get_client_connection(self):
         conn = super(WebSocketServer, self)._get_client_connection()

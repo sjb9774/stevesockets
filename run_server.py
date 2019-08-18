@@ -5,6 +5,16 @@ from stevesockets.server import WebSocketServer
 import logging
 import argparse
 from stevesockets import LOGGER_NAME
+from stevesockets.websocket import WebSocketFrame, WebSocketFrameHeaders
+from stevesockets.listeners import TextListener
+
+
+class CustomListener(TextListener):
+
+    def observe(self, message, *args, connection=None, server=None, **kwargs):
+        message = f"SteveSockets WebSocketServer has recieved your message of '{message.message}'!"
+        connection.queue_message(WebSocketFrame.get_text_frame(message).to_bytes())
+
 
 if __name__ == "__main__":
     logger = logging.getLogger(LOGGER_NAME)
@@ -17,13 +27,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--port", action="store", default=9000, type=int)
-    args = parser.parse_args()
+    parser_args = parser.parse_args()
 
-    s = WebSocketServer(address=('127.0.0.1', args.port), logger=logger)
+    s = WebSocketServer(address=('127.0.0.1', parser_args.port), logger=logger)
 
-    @s.message_handler
-    def handler(server, conn, data):
-        logger.debug('Decoded data: {data}'.format(data=data))
-        return "This is Steve's server saying 'Hello!'"
+    # Custom example listener added
+    s.register_listener(CustomListener, message_type=WebSocketFrame.OPCODE_TEXT)
 
     s.listen()
