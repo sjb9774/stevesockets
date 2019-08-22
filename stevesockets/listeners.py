@@ -2,6 +2,7 @@ from stevesockets.messages import Listener
 from stevesockets.websocket import WebSocketFrame, WebSocketFrameHeaders
 import logging
 from stevesockets import LOGGER_NAME
+import json
 
 
 class CloseListener(Listener):
@@ -37,3 +38,13 @@ class MessageSynchronizer(Listener):
         for server_connection in server.connections:
             if server_connection != connection:
                 server_connection.queue_message(server_message.to_bytes())
+
+
+class JSONListener(Listener):
+
+    def observe(self, message, *args, connection=None, server=None, **kwargs):
+        data = json.loads(message.message)
+        self.handle_json(data, *args, connection=None, server=None, **kwargs)
+
+    def handle_json(self, data, *args, **kwargs):
+        pass
