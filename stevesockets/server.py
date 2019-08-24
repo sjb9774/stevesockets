@@ -112,11 +112,16 @@ class SocketServer:
                         self.logger.warn("Manually interrupting server")
                         self.stop_listening()
                         break
+                    except Exception as err:
+                        self.logger.error(f"General error encountered, attempting graceful shutdown. Error: {err}")
+                        self.stop_listening()
+                        break
             self._stop_server()
 
     def on_message(self, connection, response):
-        self.logger.debug("Sending message {r}".format(
-            r=response.encode() if hasattr(response, "encode") else response))
+        self.logger.debug("Handling bytes {r}".format(
+            r=response.encode() if hasattr(response, "encode") else response)
+        )
         self.message_manager.dispatch_message(
             response,
             message_type=self.get_message_type(response),

@@ -12,7 +12,7 @@ from stevesockets.listeners import TextListener
 class CustomListener(TextListener):
 
     def observe(self, message, *args, connection=None, server=None, **kwargs):
-        message = f"SteveSockets WebSocketServer has recieved your message of '{message.message}'!"
+        message = f"SteveSockets WebSocketServer has received your message of '{message.message}'!"
         connection.queue_message(WebSocketFrame.get_text_frame(message).to_bytes())
 
 
