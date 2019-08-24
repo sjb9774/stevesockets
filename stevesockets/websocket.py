@@ -1,38 +1,18 @@
 from logging import getLogger
 import random
+import math
 
 logger = getLogger(__name__)
 
 
-def bits_value(bits):
-    if type(bits) != str:
-        raise ValueError("Input should be a bit string")
-    p = len(bits) - 1
-    total = 0
-    for i, bit in enumerate(bits):
-        if bit not in ("1", "0"):
-            raise ValueError("Invalid bit string")
-        total += int(bit) * (2 ** (p - i))
-    return total
+def bytes_to_int(bytes_in):
+    return int.from_bytes(bytes_in, 'little')
 
 
-def to_binary(n, pad_to=None):
-    if type(n) != int:
-        raise ValueError("Input should be an integer")
-    if n < 0:
-        raise ValueError("Input should be a positive number")
-    if pad_to and pad_to < 0:
-        raise ValueError("Can't pad to a length less than 0")
-    r = n
-    s = ""
-    while r > 0:
-        s += str(r % 2)
-        r = r // 2
-    result = s[-1::-1]
-    if pad_to and len(result) < pad_to:
-        while len(result) < pad_to:
-            result = "0" + result
-    return result
+def int_to_bytes(int_in, num_bytes=None):
+    # use the submitted amount or calculate the minimum possible
+    num_bytes = num_bytes if num_bytes is not None else math.ceil(math.log(int_in, 2))
+    return int.to_bytes(int_in, num_bytes, 'little')
 
 
 class WebSocketFrame:
@@ -54,42 +34,44 @@ class WebSocketFrame:
         self.message = message
         self.headers.payload_length = len(self.message) if self.message else 0
 
-    def get_unmasked_message(self):
-        message = ''
-        binary_mask = str(to_binary(self.headers.mask, pad_to=32))
-        for x in range(self.headers.payload_length):
-            char_data = self.message[x:x+1]
-            char = chr(bits_value(char_data) ^ bits_value(binary_mask[(x % 4) * 8:((x % 4) * 8) + 8]))
-            message += char
-        return message
-
     def to_bytes(self):
-        full_bit_str = ""
-        full_bit_str += to_binary(self.headers.fin, pad_to=1)
-        full_bit_str += to_binary(self.headers.rsv, pad_to=3)
-        full_bit_str += to_binary(self.headers.opcode, pad_to=4)
-        full_bit_str += to_binary(self.headers.mask_flag, pad_to=1)
+        byte_1 = 0
+        byte_1 += self.headers.fin << 7
+        byte_1 += self.headers.rsv << 4
+        byte_1 += self.headers.opcode
+        compiled_bytes = int_to_bytes(byte_1, 1)
+
+        byte_2 = self.headers.mask_flag << 7
+        payload_length_bytes = 0
+        payload_length_byte_count = 0
         if self.headers.payload_length <= 125:
-            full_bit_str += to_binary(self.headers.payload_length, pad_to=7)
+            byte_2 += self.headers.payload_length
         elif (self.headers.payload_length > 125) and (self.headers.payload_length < 2 ** 16):
-            full_bit_str += to_binary(126, pad_to=7)
-            full_bit_str += to_binary(self.headers.payload_length, pad_to=16)
+            payload_length_byte_count = 2
+            byte_2 += 126
+            payload_length_bytes += self.headers.payload_length
         elif self.headers.payload_length >= 2 ** 16:
-            full_bit_str += to_binary(127, pad_to=7)
-            full_bit_str += to_binary(self.headers.payload_length, pad_to=64)
+            payload_length_byte_count = 8
+            byte_2 += 127
+            payload_length_bytes += self.headers.payload_length
+
+        compiled_bytes += int_to_bytes(byte_2, 1)
+        compiled_bytes += int_to_bytes(payload_length_bytes, payload_length_byte_count)
+
         if bool(self.headers.mask_flag):
-            mask_bits = to_binary(self.headers.mask, pad_to=32)
-            full_bit_str += mask_bits
-            mask_values = [bits_value(mask_bits[x:x + 8]) for x in range(0, len(mask_bits), 8)]
-            masked_message = []
-            for i, char in enumerate(self.message):
-                masked_message.append(ord(char) ^ mask_values[i % 4])
-            full_bit_str += "".join(to_binary(x, pad_to=8) for x in masked_message)
+            mask = self.headers.mask
+            compiled_bytes += int_to_bytes(mask, 4)
+            for x, char in enumerate(self.message):
+                mask_index = x % 4
+                shift_distance = 8 * mask_index
+                mask_byte = mask & (255 << shift_distance)  # shift 11111111 and bitwise-AND to get the right mask byte
+                mask_byte >>= shift_distance  # shift the mask byte back so its value is the correct magnitude
+                masked_char = ord(char) ^ mask_byte
+                compiled_bytes += int_to_bytes(masked_char, 1)
         else:
-            msg = [to_binary(x, pad_to=8) for x in (ord(y) for y in self.message)]
-            full_bit_str += "".join(msg)
-        split_to_bytes = [bits_value(full_bit_str[x:x + 8]) for x in range(0, len(full_bit_str), 8)]
-        return bytes(split_to_bytes)
+            for char in self.message:
+                compiled_bytes += int_to_bytes(ord(char), 1)
+        return compiled_bytes
 
     def encode(self):
         # alias for to_bytes
@@ -99,36 +81,40 @@ class WebSocketFrame:
     def generate_mask():
         return random.randint(0, (2 ** 32) - 1)
 
-
     @classmethod
     def get_text_frame(cls, message):
         headers = WebSocketFrameHeaders(payload_length=len(message))
         frame = WebSocketFrame(headers=headers, message=message)
         return frame
 
-
     @classmethod
     def get_close_frame(cls, message=None):
-        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_CLOSE, payload_length=len(message.message) if message else 0)
+        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_CLOSE, payload_length=len(message) if message else 0)
         return WebSocketFrame(headers=headers, message=message)
 
     @classmethod
     def get_pong_frame(cls, message=None):
-        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_PONG, payload_length=len(message.message) if message else 0)
-        return WebSocketFrame(headers=headers, message=message.message)
+        headers = WebSocketFrameHeaders(opcode=cls.OPCODE_PONG, payload_length=len(message) if message else 0)
+        return WebSocketFrame(headers=headers, message=message)
 
     @classmethod
     def from_bytes_reader(cls, bytes_reader):
         headers = WebSocketFrameHeaders.from_bytes(bytes_reader)
-        
+
         message = ""
+        mask = headers.mask
         for x in range(headers.payload_length):
-            char_data = bytes_reader.get_next_bytes(1)
+            char_data = bytes_to_int(bytes_reader.get_next_bytes(1))
             if bool(headers.mask_flag):
-                binary_mask = str(to_binary(headers.mask, pad_to=32))
-                char = chr(bits_value(char_data) ^ bits_value(binary_mask[(x % 4) * 8:((x % 4) * 8) + 8]))
+                # unmasking cycles through each of the four bytes of the mask, bitwise-XOR'ing with the masked character
+                # byte to get the unmasked character
+                mask_index = x % 4
+                shift_distance = 8 * mask_index
+                mask_byte = mask & (255 << shift_distance)  # shift 11111111 and bitwise-AND to get the right mask byte
+                mask_byte >>= shift_distance  # shift the mask byte back so its value is the correct magnitude
+                char = chr(char_data ^ mask_byte)
             else:
-                char = chr(bits_value(char_data))
+                char = chr(char_data)
             message += char
 
         return cls(headers=headers, message=message)
@@ -151,31 +137,37 @@ class WebSocketFrameHeaders:
 
     @classmethod
     def from_bytes(cls, bytes_reader):
-        byte_str = bytes_reader.get_next_bytes(2)
-        if len(byte_str) < 16:
+        message_bytes = bytes_reader.get_next_bytes(2)
+        if len(message_bytes) != 2:
             raise SocketException('Bytes reader yielded insufficient bytes to build headers')
 
-        fin = bits_value(byte_str[0])
-        rsv = bits_value(byte_str[1:4])  # can be safely ignored
-        opcode = bits_value(byte_str[4:8])
-        mask_flag = bits_value(byte_str[8])
-        bits_9_15_val = bits_value(byte_str[9:])
+        byte_1, byte_2 = message_bytes
+        fin = byte_1 >> 7
+        rsv = byte_1 & 112  # 01110000
+        opcode = byte_1 & 15  # 00001111
+        mask_flag = byte_2 >> 7
+        bits_9_15_val = byte_2 & 127  # 01111111
 
         payload_length = None
         if bits_9_15_val <= 125:
             payload_length = bits_9_15_val
         elif bits_9_15_val == 126:
-            payload_length = bits_value(bytes_reader.get_next_bytes(2))
+            # next two bytes as a single value
+            payload_length = bytes_to_int(bytes_reader.get_next_bytes(2))
         elif bits_9_15_val == 127:
-            payload_length = bits_value(bytes_reader.get_next_bytes(8))
+            # next eight bytes as a single value
+            payload_length = bytes_to_int(bytes_reader.get_next_bytes(8))
 
-        mask = bytes_reader.get_next_bytes(4) if bool(mask_flag) else None
+        mask = None
+        if bool(mask_flag):
+            # next four bytes as a single value
+            mask = bytes_to_int(bytes_reader.get_next_bytes(4))
 
         return cls(fin=fin,
                    opcode=opcode,
                    rsv=rsv,
                    mask_flag=mask_flag,
-                   mask=bits_value(mask) if mask else None,
+                   mask=mask if mask else None,
                    payload_length=payload_length)
 
 
@@ -189,4 +181,4 @@ class SocketBytesReader:
         self.connection = connection
 
     def get_next_bytes(self, n):
-        return "".join([to_binary(byte, pad_to=8) for byte in self.connection.socket.recv(n)])
+        return self.connection.socket.recv(n)
