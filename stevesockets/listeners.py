@@ -35,7 +35,7 @@ class CloseListener(WebFrameListener):
 class PingListener(WebFrameListener):
 
     def observe(self, message, *args, connection=None, **kwargs):
-        msg = WebSocketFrame.get_pong_frame(message=message)
+        msg = WebSocketFrame.get_pong_frame()  # pong frames need no message
         self.send_frame(connection, msg)
 
 

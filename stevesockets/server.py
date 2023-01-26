@@ -55,14 +55,14 @@ class SocketServer:
         new_connection_list = self.connections[:]
         for connection in self.connections:
             if connection.is_to_be_closed():
-                self.logger.warn("Connection @ {addr}:{port} to be closed before receiving data? closing".format(
+                self.logger.warning("Connection @ {addr}:{port} to be closed before receiving data? closing".format(
                     addr=connection.address, port=connection.port))
                 new_connection_list.remove(connection)
                 self._close_connection(connection)
             elif connection.is_closed():  # this can happen in when running asynchronously
                 new_connection_list.remove(connection)
             elif connection.socket.fileno() == -1:
-                self.logger.warn("Connection with invalid file descriptor not closed or marked for closure")
+                self.logger.warning("Connection with invalid file descriptor not closed or marked for closure")
                 self._close_connection(connection)
                 new_connection_list.remove(connection)
         self.connections = new_connection_list
@@ -81,7 +81,7 @@ class SocketServer:
             unless there are specialized cases for connections that need to be handled. """
         self._create_socket()
         if not self.socket:
-            self.logger.warn("Socket not successfully initialized, check logs for details. Aborting listen()")
+            self.logger.warning("Socket not successfully initialized, check logs for details. Aborting listen()")
             self.stop_listening()
             self._stop_server()
         else:
@@ -93,7 +93,7 @@ class SocketServer:
                 try:
                     self._build_connections()
                 except KeyboardInterrupt as err:
-                    self.logger.warn("Manually interrupting server")
+                    self.logger.warning("Manually interrupting server")
                     self.stop_listening()
                     break
 
@@ -109,7 +109,7 @@ class SocketServer:
                         self.logger.warning("Socket error '{err}'".format(err=err))
                         self._close_connection(connection)
                     except KeyboardInterrupt as err:
-                        self.logger.warn("Manually interrupting server")
+                        self.logger.warning("Manually interrupting server")
                         self.stop_listening()
                         break
                     except Exception as err:

@@ -68,7 +68,7 @@ class WebSocketFrame:
                 mask_byte >>= shift_distance  # shift the mask byte back so its value is the correct magnitude
                 masked_char = ord(char) ^ mask_byte
                 compiled_bytes += int_to_bytes(masked_char, 1)
-        else:
+        elif self.message:
             for char in self.message:
                 compiled_bytes += int_to_bytes(ord(char), 1)
         return compiled_bytes
