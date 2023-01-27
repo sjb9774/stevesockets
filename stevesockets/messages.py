@@ -1,17 +1,28 @@
+import enum
+
+
+class MessageTypes(enum.Enum):
+	DEFAULT = "__default"
+	TEXT = 1
+	BINARY = 2
+
+	CLOSE = 8
+	PING = 9
+	PONG = 10
+
+
 class MessageManager:
 
-	default_message_type = "__default"
+	default_message_type = MessageTypes.DEFAULT
 
-	def __init__(self, default_message_type=None):
+	def __init__(self):
 		self.message_listeners = {}
-		if default_message_type:
-			self.default_message_type = default_message_type
 
-	def listen_for_message(self, listener, message_type=default_message_type):
+	def listen_for_message(self, listener, message_type: MessageTypes = MessageTypes.DEFAULT):
 		self.message_listeners.setdefault(message_type, [])
 		self.message_listeners[message_type].append(listener)
 
-	def dispatch_message(self, message, *args, message_type=default_message_type, **kwargs):
+	def dispatch_message(self, message, *args, message_type: MessageTypes = MessageTypes.DEFAULT, **kwargs):
 		if message_type not in self.message_listeners.keys():
 			return
 

@@ -3,7 +3,7 @@ import socket
 import select
 import threading
 from stevesockets.socketconnection import SocketConnection
-from stevesockets.messages import MessageManager
+from stevesockets.messages import MessageTypes, MessageManager
 
 
 class SocketServer:
@@ -134,7 +134,8 @@ class SocketServer:
             conn.flush_messages()
 
     def get_message_type(self, message):
-        return self.message_manager.default_message_type
+        # TODO: Use some logic or configuration to determine message types
+        return MessageTypes.DEFAULT
 
     @staticmethod
     def get_send_message_closure(connection: SocketConnection):

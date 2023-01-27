@@ -2,8 +2,9 @@ import base64
 import hashlib
 from stevesockets.websocket.websocket import WebSocketFrame, SocketException, SocketBytesReader
 from stevesockets.socketconnection import SocketConnection
-from stevesockets.listeners import CloseListener, TextListener, PingListener
+from stevesockets.listeners import CloseListener, TextListener, PingListener, Listener
 from stevesockets.server import SocketServer
+from stevesockets.messages import MessageManager, MessageTypes
 
 
 class WebSocketConnection(SocketConnection):
@@ -47,13 +48,13 @@ class WebSocketServer(SocketServer):
         self.setup_message_listeners()
 
     def setup_control_listeners(self):
-        self.register_listener(CloseListener, message_type=WebSocketFrame.OPCODE_CLOSE)
-        self.register_listener(PingListener, message_type=WebSocketFrame.OPCODE_PING)
+        self.register_listener(CloseListener, message_type=MessageTypes.CLOSE)
+        self.register_listener(PingListener, message_type=MessageTypes.PING)
 
     def setup_message_listeners(self):
-        self.register_listener(TextListener, message_type=WebSocketFrame.OPCODE_TEXT)
+        self.register_listener(TextListener, message_type=MessageTypes.TEXT)
 
-    def register_listener(self, listener_cls, message_type=None):
+    def register_listener(self, listener_cls: type[Listener], message_type=MessageTypes.DEFAULT):
         self.message_manager.listen_for_message(listener_cls(), message_type=message_type)
 
     def _get_client_connection(self):
@@ -76,8 +77,8 @@ class WebSocketServer(SocketServer):
 
         return frame
 
-    def get_message_type(self, message):
-        return message.headers.opcode
+    def get_message_type(self, message) -> MessageTypes:
+        return MessageTypes(message.headers.opcode)
 
     def _close_connection(self, connection, close_message="Connection closing"):
         self.logger.debug("Connection @ {addr}:{port} starting graceful closure".format(addr=connection.address,
