@@ -45,7 +45,7 @@ class TestWebSocketFrame(unittest.TestCase):
         self.assertIsNone(f.headers.mask)
 
     def test_webframe_from_bytes_non_fragmented_with_mask(self):
-        bstr = b'\x81\x89\x13}\xfd\xb7G8\xae\xe339\xbc\xe3R'
+        bstr = b'\x81\x89\xb7\xfd}\x13\xe3\xb8.G\x97\xb9<G\xf6'
         reader = self._get_mock_bytes_reader(bytes_to_return=bstr)
         f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.headers.mask, 327024055)

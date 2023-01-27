@@ -35,9 +35,12 @@ class WebSocketFrame:
     OPCODE_PONG = 10
     MAX_BUFFER_SIZE = 4096
 
-    def __init__(self, headers=None, message=None):
+    header: WebSocketFrameHeaders
+    message: str
+
+    def __init__(self, headers: WebSocketFrameHeaders = None, message: str = ''):
         self.headers = headers if headers else WebSocketFrameHeaders()
-        self.message = None
+        self.message = ''
         self.set_message(message)
 
     def set_message(self, message):
