@@ -7,14 +7,14 @@ from stevesockets.websocket.websocket import WebSocketFrameHeaders
 
 class TestWebSocketFrame(unittest.TestCase):
 
-    def _get_mock_bytes_reader(self, bytes=None, handshook=True) -> SocketBytesReader:
-        conn = utils.get_mock_connection(returns=bytes, handshook=handshook)
+    def _get_mock_bytes_reader(self, bytes_to_return=None, handshook=True) -> SocketBytesReader:
+        conn = utils.get_mock_connection(returns=bytes_to_return, handshook=handshook)
         reader = SocketBytesReader(conn)
         return reader
 
     def test_webframe_from_bytes_non_fragmented(self):
         data = b'\x81\x89I\x96k\xa8\x1d\xd38\xfci\xd2*\xfc\x08'
-        reader = self._get_mock_bytes_reader(bytes=data)
+        reader = self._get_mock_bytes_reader(bytes_to_return=data)
         f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.message, "TEST DATA")
         self.assertEqual(f.headers.payload_length, 9)
@@ -38,7 +38,7 @@ class TestWebSocketFrame(unittest.TestCase):
 
     def test_webframe_from_bytes_non_fragmented_no_mask(self):
         bstr = b'\x81\tTEST DATA'
-        reader = self._get_mock_bytes_reader(bytes=bstr)
+        reader = self._get_mock_bytes_reader(bytes_to_return=bstr)
         f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.message, "TEST DATA")
         self.assertEqual(f.headers.payload_length, 9)
@@ -46,15 +46,15 @@ class TestWebSocketFrame(unittest.TestCase):
 
     def test_webframe_from_bytes_non_fragmented_with_mask(self):
         bstr = b'\x81\x89\x13}\xfd\xb7G8\xae\xe339\xbc\xe3R'
-        reader = self._get_mock_bytes_reader(bytes=bstr)
+        reader = self._get_mock_bytes_reader(bytes_to_return=bstr)
         f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.headers.mask, 327024055)
         self.assertEqual(f.headers.payload_length, 9)
         self.assertEqual(f.message, "TEST DATA")
 
     def test_webframe_from_bytes_fragmented_126_payload_no_mask(self):
-        bstr = b'\x81~\x00~TEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATA'
-        reader = self._get_mock_bytes_reader(bytes=bstr)
+        bstr = b'\x81~~\x00TEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATATEST DATA'
+        reader = self._get_mock_bytes_reader(bytes_to_return=bstr)
         f = WebSocketFrame.from_bytes_reader(reader)
         self.assertEqual(f.message, "TEST DATA" * 14)
         self.assertEqual(f.headers.payload_length, 126)
@@ -70,6 +70,6 @@ class TestWebSocketFrame(unittest.TestCase):
 
     def test_webframe_premature_ending(self):
         bstr = b'\x819'
-        reader = self._get_mock_bytes_reader(bytes=bstr)
+        reader = self._get_mock_bytes_reader(bytes_to_return=bstr)
         with self.assertRaises(StopIteration):
             WebSocketFrame.from_bytes_reader(reader)

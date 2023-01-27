@@ -22,10 +22,7 @@ class SocketBytesReader:
         self.connection = connection
 
     def get_next_bytes(self, n) -> bytes:
-        try:
-            return self.connection.socket.recv(n)
-        except StopIteration:
-            return b''
+        return self.connection.socket.recv(n)
 
 
 class WebSocketFrame:
@@ -166,7 +163,8 @@ class WebSocketFrameHeaders:
             payload_length = bits_9_15_val
         elif bits_9_15_val == 126:
             # next two bytes as a single value
-            payload_length = bytes_to_int(bytes_reader.get_next_bytes(2))
+            next_2 = bytes_reader.get_next_bytes(2)
+            payload_length = bytes_to_int(next_2)
         elif bits_9_15_val == 127:
             # next eight bytes as a single value
             next_8 = bytes_reader.get_next_bytes(8)
