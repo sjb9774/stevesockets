@@ -1,3 +1,4 @@
+from __future__ import annotations
 from logging import getLogger
 import random
 import math
@@ -13,6 +14,18 @@ def int_to_bytes(int_in, num_bytes=None):
     # use the submitted amount or calculate the minimum possible
     num_bytes = num_bytes if num_bytes is not None else math.ceil(math.log(int_in, 2))
     return int.to_bytes(int_in, num_bytes, 'little')
+
+
+class SocketBytesReader:
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def get_next_bytes(self, n) -> bytes:
+        try:
+            return self.connection.socket.recv(n)
+        except StopIteration:
+            return b''
 
 
 class WebSocketFrame:
@@ -98,7 +111,7 @@ class WebSocketFrame:
         return WebSocketFrame(headers=headers, message=message)
 
     @classmethod
-    def from_bytes_reader(cls, bytes_reader):
+    def from_bytes_reader(cls, bytes_reader: SocketBytesReader) -> WebSocketFrame:
         headers = WebSocketFrameHeaders.from_bytes(bytes_reader)
 
         message = ""
@@ -156,7 +169,8 @@ class WebSocketFrameHeaders:
             payload_length = bytes_to_int(bytes_reader.get_next_bytes(2))
         elif bits_9_15_val == 127:
             # next eight bytes as a single value
-            payload_length = bytes_to_int(bytes_reader.get_next_bytes(8))
+            next_8 = bytes_reader.get_next_bytes(8)
+            payload_length = bytes_to_int(next_8)
 
         mask = None
         if bool(mask_flag):
@@ -175,10 +189,3 @@ class SocketException(Exception):
     pass
 
 
-class SocketBytesReader:
-
-    def __init__(self, connection):
-        self.connection = connection
-
-    def get_next_bytes(self, n):
-        return self.connection.socket.recv(n)

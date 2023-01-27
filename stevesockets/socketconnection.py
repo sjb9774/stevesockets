@@ -1,9 +1,12 @@
+from __future__ import annotations
 import socket
 import collections
 import logging
 
 
 class SocketConnection:
+
+    socket: socket.socket
 
     def __init__(self, sck, address, port, logger=None):
         self.socket = sck
@@ -26,8 +29,9 @@ class SocketConnection:
     def send_data(self, data):
         self.socket.sendall(data)
 
-    def queue_message(self, message):
+    def queue_message(self, message) -> SocketConnection:
         self.messages.append(message)
+        return self
 
     def clear_messages(self):
         self.messages.clear()
@@ -36,9 +40,11 @@ class SocketConnection:
         for x in range(len(self.messages)):
             msg = self.messages.popleft()
             try:
+                self.logger.debug(f"Flushing message {msg}")
                 self.socket.sendall(msg)
             except socket.error as err:
                 self.logger.error("Socket error while sending message: {err}".format(err=err))
+        return self
 
     def is_closed(self):
         return self.closed
@@ -54,3 +60,8 @@ class SocketConnection:
 
     def is_to_be_closed(self):
         return self.to_be_closed
+
+    # def __del__(self):
+    #     if self.socket:
+    #         self.socket.shutdown(socket.SHUT_RDWR)
+    #         self.socket.close()

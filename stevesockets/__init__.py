@@ -1,1 +1,1 @@
-LOGGER_NAME = "stevesockets.server.WebSocketServer"
+LOGGER_NAME = "stevesockets.server.SocketServer"

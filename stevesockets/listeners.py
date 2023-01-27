@@ -1,5 +1,5 @@
 from stevesockets.messages import Listener
-from stevesockets.websocket import WebSocketFrame, WebSocketFrameHeaders
+from stevesockets.websocket.websocket import WebSocketFrame, WebSocketFrameHeaders
 import logging
 from stevesockets import LOGGER_NAME
 import json
