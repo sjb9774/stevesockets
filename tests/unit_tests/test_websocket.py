@@ -34,7 +34,7 @@ class TestWebSocketFrame(unittest.TestCase):
             message="TEST DATA",
             headers=WebSocketFrameHeaders(mask=WebSocketFrame.generate_mask(), mask_flag=1)
         )
-        self.assertEqual(f.to_bytes(), b'\x81\x89\x00\x08\x03iTMP= LB=A')
+        self.assertEqual(f.to_bytes(), b'\x81\x89i\x03\x08\x00=F[TIGIT(')
 
     def test_webframe_from_bytes_non_fragmented_no_mask(self):
         bstr = b'\x81\tTEST DATA'
