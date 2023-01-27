@@ -1,5 +1,5 @@
 from unittest.mock import Mock
-from stevesockets.server import WebSocketConnection
+from stevesockets.websocket.server import WebSocketConnection
 
 
 def get_mock_connection(returns=None, handshook=True, to_be_closed=False, closed=False):

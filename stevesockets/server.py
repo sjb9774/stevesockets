@@ -106,7 +106,7 @@ class SocketServer:
                             response = self.connection_handler(connection)
                             if response:
                                 self.on_message(connection, response)
-                    except socket.error as err:
+                    except OSError as err:
                         self.logger.warning("Socket error '{err}'".format(err=err))
                         self._close_connection(connection)
                     except KeyboardInterrupt as err:
