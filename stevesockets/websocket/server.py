@@ -1,9 +1,9 @@
 import base64
 import hashlib
-from stevesockets.websocket.websocket import WebSocketFrame, SocketException, SocketBytesReader
+from stevesockets.websocket.websocket import WebSocketFrame, SocketException
 from stevesockets.socketconnection import SocketConnection
 from stevesockets.listeners import CloseListener, TextListener, PingListener, Listener
-from stevesockets.server import SocketServer
+from stevesockets.server import SocketServer, SocketBytesReader
 from stevesockets.messages import MessageManager, MessageTypes
 
 
@@ -53,9 +53,6 @@ class WebSocketServer(SocketServer):
 
     def setup_message_listeners(self):
         self.register_listener(TextListener, message_type=MessageTypes.TEXT)
-
-    def register_listener(self, listener_cls: type[Listener], message_type=MessageTypes.DEFAULT):
-        self.message_manager.listen_for_message(listener_cls(), message_type=message_type)
 
     def _get_client_connection(self):
         conn = super(WebSocketServer, self)._get_client_connection()

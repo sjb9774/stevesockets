@@ -62,9 +62,9 @@ class TestSocketServer(unittest.TestCase):
 
         self.server.on_message = Mock()
         connection_mock = Mock(socket=Mock(recv=Mock(return_value="MOCK BYTES")))
-        self.server.connections = [connection_mock]
-        self.server._build_connections = Mock()
-        self.server.prune_connections = Mock()
+        self.server.peer_connections = [connection_mock]
+        self.server._build_peer_connections = Mock()
+        self.server.prune_peer_connections = Mock()
         self.server.listen()
         connection_mock.socket.recv.assert_called_once_with(4096)
         self.server.on_message.assert_called_once_with(connection_mock, "TEST")

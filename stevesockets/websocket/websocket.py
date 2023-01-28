@@ -3,6 +3,8 @@ from logging import getLogger
 import random
 import math
 
+import stevesockets.server
+
 logger = getLogger(__name__)
 
 
@@ -14,15 +16,6 @@ def int_to_bytes(int_in, num_bytes=None):
     # use the submitted amount or calculate the minimum possible
     num_bytes = num_bytes if num_bytes is not None else math.ceil(math.log(int_in, 2))
     return int.to_bytes(int_in, num_bytes, 'little')
-
-
-class SocketBytesReader:
-
-    def __init__(self, connection):
-        self.connection = connection
-
-    def get_next_bytes(self, n) -> bytes:
-        return self.connection.socket.recv(n)
 
 
 class WebSocketFrame:
@@ -111,7 +104,7 @@ class WebSocketFrame:
         return WebSocketFrame(headers=headers, message=message)
 
     @classmethod
-    def from_bytes_reader(cls, bytes_reader: SocketBytesReader) -> WebSocketFrame:
+    def from_bytes_reader(cls, bytes_reader: stevesockets.server.SocketBytesReader) -> WebSocketFrame:
         headers = WebSocketFrameHeaders.from_bytes(bytes_reader)
 
         message = ""
@@ -134,7 +127,7 @@ class WebSocketFrame:
 
     @classmethod
     def read_from_connection(cls, connection):
-        reader = SocketBytesReader(connection)
+        reader = stevesockets.server.SocketBytesReader(connection)
         return cls.from_bytes_reader(reader)
 
 

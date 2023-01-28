@@ -1,20 +1,32 @@
+from __future__ import annotations
+
 import logging
 import socket
 import select
 import threading
 from stevesockets.socketconnection import SocketConnection
 from stevesockets.messages import MessageTypes, MessageManager
+from stevesockets.listeners import Listener
+
+
+class SocketBytesReader:
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def get_next_bytes(self, n) -> bytes:
+        return self.connection.socket.recv(n)
 
 
 class SocketServer:
     connection_cls = SocketConnection
-    connections: list[SocketConnection]
+    peer_connections: list[SocketConnection]
 
     def __init__(self, address=('127.0.0.1', 9000), logger=None):
         self.address = address
         self.listening = False
         self.set_logger(logger if logger else logging.getLogger())
-        self.connections = []
+        self.peer_connections = []
         self.handle_message = None
         self.message_manager = MessageManager()
 
@@ -37,6 +49,9 @@ class SocketServer:
     def set_logger(self, logger):
         self.logger = logger
 
+    def register_listener(self, listener_cls: type[Listener], message_type=MessageTypes.DEFAULT):
+        self.message_manager.listen_for_message(listener_cls(), message_type=message_type)
+
     def _get_client_connection(self) -> SocketConnection:
         sck, addr = self.socket.accept()
         self.logger.debug("{addr}".format(addr=addr))
@@ -45,12 +60,12 @@ class SocketServer:
             "New connection created at {addr}:{port}".format(addr=connection.address, port=connection.port))
         return connection
 
-    def prune_connections(self):
+    def prune_peer_connections(self):
         """ Removes connections from the pool that are closed or marked to be closed """
         # this list will be the list of valid connections left (after creating new connections and closing old ones)
         # after we've finished looping through all the currently active connections
-        new_connection_list = self.connections[:]
-        for connection in self.connections:
+        new_connection_list = self.peer_connections[:]
+        for connection in self.peer_connections:
             if connection.is_to_be_closed():
                 self.logger.warning(
                     "Connection closure initiated by peer @ {addr}:{port}".format(
@@ -66,14 +81,14 @@ class SocketServer:
                 self.logger.warning("Connection with invalid file descriptor not closed or marked for closure")
                 self._close_connection(connection)
                 new_connection_list.remove(connection)
-        self.connections = new_connection_list
+        self.peer_connections = new_connection_list
 
-    def _build_connections(self):
+    def _build_peer_connections(self):
         conn, _, _ = select.select([self.socket], [], [], .1)
         for c in conn:
             connection = self._get_client_connection()
-            self.connections.append(connection)
-            self.logger.debug("Total connections: {n}".format(n=len(self.connections)))
+            self.peer_connections.append(connection)
+            self.logger.debug("Total connections: {n}".format(n=len(self.peer_connections)))
 
     def listen(self):
         """ Creates and binds a socket connection at `address` on `port`, then listens for incoming
@@ -92,17 +107,19 @@ class SocketServer:
             self.listening = True
             while self.listening:
                 try:
-                    self._build_connections()
+                    self._build_peer_connections()
                 except KeyboardInterrupt as err:
                     self.logger.warning("Manually interrupting server")
                     self.stop_listening()
                     break
 
-                self.prune_connections()
-                for connection in self.connections:
+                self.prune_peer_connections()
+                for connection in self.peer_connections:
                     try:
+                        self.logger.debug(f"Processing connection @ {connection.socket.getpeername()}")
                         avail_data, _, _ = select.select([connection.socket], [], [], .1)
                         if avail_data:
+                            self.logger.debug(f"Data found @ {avail_data[0].getpeername()}")
                             response = self.connection_handler(connection)
                             if response:
                                 self.on_message(connection, response)
@@ -130,7 +147,7 @@ class SocketServer:
             server=self
         )
         # each message the server receives could queue messages in any given connection, so flush them all
-        for conn in self.connections:
+        for conn in self.peer_connections:
             conn.flush_messages()
 
     def get_message_type(self, message):
@@ -177,9 +194,9 @@ class SocketServer:
         self.logger.debug("Connection @ {addr}:{port} closed".format(addr=connection.address, port=connection.port))
 
     def _stop_server(self):
-        self.logger.debug("Closing {n} connections".format(n=len(self.connections)))
-        [self._close_connection(c) for c in self.connections]
-        self.connections = []
+        self.logger.debug("Closing {n} connections".format(n=len(self.peer_connections)))
+        [self._close_connection(c) for c in self.peer_connections]
+        self.peer_connections = []
         if self.socket:
             self.logger.debug("Closing server socket")
             self.socket.close()

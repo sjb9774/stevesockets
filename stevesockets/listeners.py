@@ -51,7 +51,7 @@ class MessageSynchronizer(WebFrameListener):
     def observe(self, message, *args, connection=None, server=None, **kwargs):
         headers = WebSocketFrameHeaders(payload_length=len(message.message))
         server_message = WebSocketFrame(headers=headers, message=message.message)
-        for server_connection in server.connections:
+        for server_connection in server.peer_connections:
             if server_connection != connection:
                 self.send_frame(server_connection, server_message)
 
