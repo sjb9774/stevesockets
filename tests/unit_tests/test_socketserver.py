@@ -1,7 +1,6 @@
 import unittest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from unittest import mock
-from tests import utils
 import stevesockets.server
 
 

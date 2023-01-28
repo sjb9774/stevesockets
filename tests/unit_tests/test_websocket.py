@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import Mock
 from tests import utils
-from stevesockets.websocket.websocket import WebSocketFrame
 from stevesockets.server import SocketBytesReader
+from stevesockets.websocket.websocket import WebSocketFrame
 from stevesockets.websocket.websocket import WebSocketFrameHeaders
 
 
