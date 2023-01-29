@@ -52,7 +52,7 @@ class SocketServer:
     def register_listener(self, listener_cls: type[Listener], message_type=MessageTypes.DEFAULT):
         self.message_manager.listen_for_message(listener_cls(), message_type=message_type)
 
-    def _get_client_connection(self) -> SocketConnection:
+    def _get_client_connection(self) -> connection_cls:
         sck, addr = self.socket.accept()
         self.logger.debug("{addr}".format(addr=addr))
         connection = self.connection_cls(sck, addr[0], addr[1], logger=self.logger)

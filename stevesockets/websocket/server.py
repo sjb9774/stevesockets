@@ -112,7 +112,7 @@ class WebSocketServer(SocketServer):
         msg += "\r\n"
         conn.socket.sendall(msg.encode())
 
-    def handle_websocket_handshake(self, conn, data):
+    def handle_websocket_handshake(self, conn: WebSocketConnection, data):
         self.logger.debug("Starting handshake")
         conn.set_status(WebSocketConnection.CONNECTING)
         split_data = data.decode().split("\r\n")
