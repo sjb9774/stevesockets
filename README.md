@@ -1,6 +1,8 @@
 # SteveSockets
 **For demonstration and educational purposes only — this server cannot support production projects**
-__Note: Test are not currently passing, need to be updated with recent refactor__
+
+_Note: Tests are not currently passing, need to be updated with recent refactor_
+
 A Small Socket Server Implementation in Python 3.10 with HTTP and WebSocket extensions.
 
 ## Usage
