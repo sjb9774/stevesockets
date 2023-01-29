@@ -38,15 +38,4 @@ if __name__ == "__main__":
     print(f"Listening at http://127.0.0.1:{parser_args.port}")
 
 
-    # @s.message_handler
-    # def my_business_function(request_message: bytes, send_message: callable):
-    #     content = bytes("<!doctype html><html><body><h1>Hello world</h1></body></html>", "utf-8")
-    #     msg = bytes(f"HTTP/1.1 200 OK\r\n", 'utf-8')
-    #     msg2 = bytes(f"content-type: text/html\r\n\r\n", "utf-8")
-    #     msg3 = content
-    #     send_message(msg)
-    #     send_message(msg2)
-    #     send_message(msg3, close_after=True)
-    #     return "Received data '{data}'".format(data=request_message)
-
     s.listen()
