@@ -5,15 +5,14 @@ from stevesockets.server import SocketServer, SocketConnection
 import logging
 import argparse
 from stevesockets import LOGGER_NAME
-from stevesockets.websocket.websocket import WebSocketFrame, WebSocketFrameHeaders
 from stevesockets.listeners import TextListener
 
 
 class CustomListener(TextListener):
 
-    def observe(self, message, *args, connection=None, server=None, **kwargs):
-        message = f"SteveSockets WebSocketServer has received your message of '{message.message}'!"
-        connection.queue_message(WebSocketFrame.get_text_frame(message).to_bytes())
+    def observe(self, message: bytes, *args, connection: SocketConnection = None, server: SocketServer = None, **kwargs):
+        message = f"SteveSockets SocketServer has received your message of '{message.decode('utf-8').strip()}'\n"
+        connection.queue_message(bytes(message, "utf-8"))
 
 
 if __name__ == "__main__":
@@ -31,16 +30,6 @@ if __name__ == "__main__":
 
     s = SocketServer(logger=logger)
 
-
-    @s.message_handler
-    def my_business_function(request_message: bytes, send_message: callable):
-        content = bytes("<!doctype html><html><body><h1>Hello world</h1></body></html>", "utf-8")
-        msg = bytes(f"HTTP/1.1 200 OK\r\n", 'utf-8')
-        msg2 = bytes(f"content-type: text/html\r\n\r\n", "utf-8")
-        msg3 = content
-        send_message(msg)
-        send_message(msg2)
-        send_message(msg3, close_after=True)
-        return "Received data '{data}'".format(data=request_message)
+    s.register_listener(CustomListener)
 
     s.listen()

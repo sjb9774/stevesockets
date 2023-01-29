@@ -116,7 +116,7 @@ class SocketServer:
                 self.prune_peer_connections()
                 for connection in self.peer_connections:
                     try:
-                        self.logger.debug(f"Processing connection @ {connection.socket.getpeername()}")
+                        # self.logger.debug(f"Checking connection @ {connection.socket.getpeername()}")
                         avail_data, _, _ = select.select([connection.socket], [], [], .1)
                         if avail_data:
                             self.logger.debug(f"Data found @ {avail_data[0].getpeername()}")
@@ -165,18 +165,29 @@ class SocketServer:
         return send_message_closure
 
     def connection_handler(self, connection: SocketConnection):
-        """ Takes a SocketConnection as an argument and passes data received from it
-            to `handle_message` which should return the appropriate response for the
-            application. Can be overridden for pre-processing connections/data before
-            building a response such as decoding/encoding data before it's passed to
-            the business logic portion of your application """
-        data = connection.socket.recv(4096)
-        if data:
-            response = self.handle_message(data, self.get_send_message_closure(connection))
-            return response
-        else:
+        bytes_reader = SocketBytesReader(connection)
+
+        self.logger.debug("Server handling incoming data")
+        try:
+            readable_data, _, _ = select.select([connection.socket], [], [], 0)
+            bit = bytes_reader.get_next_bytes(1) if readable_data else b''
+            chunk = bit
+            while readable_data and bit:
+                bit = bytes_reader.get_next_bytes(1)
+                chunk += bit
+                readable_data, _, _ = select.select([connection.socket], [], [], 0)
+            data_in = chunk
+        except ConnectionResetError:
+            self.logger.warning("Connection closed prematurely, marking for closing")
             connection.mark_for_closing()
             return None
+
+        if not data_in:
+            self.logger.warning("Read no data from socket, marking for closing")
+            connection.mark_for_closing()
+        return data_in
+
+
 
     def handle_message(self, connection, data):
         """ Should be overridden by subclasses. Responsible for taking raw bytes and
